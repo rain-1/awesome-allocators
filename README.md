@@ -8,5 +8,10 @@ Awesome links and information about memory allocation
 * nedmalloc: http://www.nedprod.com/programs/portable/nedmalloc/
 * tcmalloc: http://goog-perftools.sourceforge.net/doc/tcmalloc.html
 
+## Garbage Collectors
+* http://www.hboehm.info/gc/
+
 ## General Learning
-* http://www.memorymanagement.org/
+* Memory Management Enyclopedia: http://www.memorymanagement.org/
+* Visualizing GCs: https://spin.atomicobject.com/2014/09/03/visualizing-garbage-collection-algorithms/
+* Mark and Sweep GC Tutorial: http://journal.stuffwithstuff.com/2013/12/08/babys-first-garbage-collector/
