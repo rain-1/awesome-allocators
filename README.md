@@ -14,5 +14,7 @@ Awesome links and information about memory allocation
 
 ## General Learning
 * Memory Management Enyclopedia: http://www.memorymanagement.org/
+* SystemProgramming guide: [Memory, Part 1: Heap Memory Introduction](https://github.com/angrave/SystemProgramming/wiki/Memory,-Part-1:-Heap-Memory-Introduction)
+* SystemProgramming guide: [Memory, Part 2: Implementing a Memory Allocator](https://github.com/angrave/SystemProgramming/wiki/Memory%2C-Part-2%3A-Implementing-a-Memory-Allocator)
 * Visualizing GCs: https://spin.atomicobject.com/2014/09/03/visualizing-garbage-collection-algorithms/
 * Mark and Sweep GC Tutorial: http://journal.stuffwithstuff.com/2013/12/08/babys-first-garbage-collector/
