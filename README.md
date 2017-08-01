@@ -3,6 +3,7 @@ Awesome links and information about memory allocation
 
 ## malloc/free Implementations
 * the trivial bump allocator: [bump allocator](bump.md)
+* liballoc (for hobby OS's): https://github.com/blanham/liballoc/
 * dlmalloc: http://g.oswego.edu/dl/html/malloc.html
 * heapmm (AVL tree based): http://www.geocities.ws/wkaras/heapmm/heapmm.html
 * jemalloc: http://jemalloc.net/
