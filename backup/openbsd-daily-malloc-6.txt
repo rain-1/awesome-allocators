@@ -1,0 +1,123 @@
+21:00 [Users #openbsd-daily]
+21:00 [@dlg           ] [ bruflu     ] [ filwisher    ] [ landers2  ] [ phy1729  ] [ tarug0       ] 
+21:00 [@mulander      ] [ brynet     ] [ flopper      ] [ lteo[m]   ] [ polishdub] [ tdjones      ] 
+21:00 [ __gilles[away]] [ cengizIO   ] [ FRIGN        ] [ lucias    ] [ qbit     ] [ tdmackey_    ] 
+21:00 [ acgissues     ] [ corbyhaas  ] [ g0relike     ] [ luisbg    ] [ quinq    ] [ Technaton    ] 
+21:00 [ acidfoo-_     ] [ davl       ] [ geetam       ] [ mandarg   ] [ rain1    ] [ thrym        ] 
+21:00 [ administ1aitor] [ debb75     ] [ ggg_         ] [ martin__2 ] [ rEv9     ] [ timclassic   ] 
+21:00 [ akfaew        ] [ Dhole      ] [ ghostyy      ] [ mattl     ] [ rgouveia_] [ TronDD       ] 
+21:00 [ akkartik      ] [ dial_up    ] [ ghugha       ] [ metadave  ] [ rnelson  ] [ turlando     ] 
+21:00 [ antoon_i      ] [ dmfr       ] [ Guest96088   ] [ mikeb     ] [ ryan     ] [ TuxOtaku     ] 
+21:00 [ antranigv     ] [ dostoyevsky] [ harrellc10per] [ mikeputnam] [ S007     ] [ ule          ] 
+21:00 [ apotheon      ] [ dsp        ] [ Harry_       ] [ mpa80     ] [ SETW     ] [ Vaelatern    ] 
+21:00 [ ar            ] [ DuClare    ] [ horia        ] [ mpts      ] [ shazaum  ] [ vbarros      ] 
+21:00 [ asie          ] [ duncaen    ] [ jbernard     ] [ Naabed-_  ] [ sid77    ] [ viq          ] 
+21:00 [ azend|vps     ] [ dxtr       ] [ jsing        ] [ nacci     ] [ skizye   ] [ vyvup        ] 
+21:00 [ bcd           ] [ eau        ] [ kAworu       ] [ nacelle   ] [ skrzyp   ] [ whyt         ] 
+21:00 [ bch           ] [ ebag_      ] [ kittens      ] [ Niamkik   ] [ smiles`  ] [ Wilawar      ] 
+21:00 [ biniar        ] [ emigrant   ] [ kl3          ] [ noexcept_ ] [ Soft     ] [ wilornel     ] 
+21:00 [ brianpc       ] [ entelechy  ] [ kpcyrd       ] [ oldlaptop ] [ stateless] [ WubTheCaptain] 
+21:00 [ brianritchie  ] [ erethon    ] [ kraucrow     ] [ owa       ] [ swankier ] [ xor29ah      ] 
+21:00 [ brtln         ] [ fcambus    ] [ kysse        ] [ petrus_lt ] [ t_b      ] [ zelest       ] 
+21:00 -!- Irssi: #openbsd-daily: Total of 120 nicks [2 ops, 0 halfops, 0 voices, 118 normal]
+21:00 <@mulander> --- code read: malloc freeguards ---
+21:00 <@mulander> *** diving into how the 'F' free guard option works ***
+21:01 <@mulander> code: http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c
+21:01 <@mulander> version: /*  $OpenBSD: malloc.c,v 1.226 2017/06/19 03:06:26 dlg Exp $    */
+21:01 <@mulander> man: https://man.openbsd.org/malloc
+21:02 <@mulander> man: https://man.openbsd.org/malloc.conf.5
+21:02 <@mulander> the 'F' option is documented as:
+21:02 <@mulander> "Freeguard". Enable use after free detection. Unused pages on the freelist are read and write protected to cause a segmentation fault upon access. This will also switch off the delayed freeing of chunks, reducing random behaviour but detecting double free(3) calls as early as possible. This option is intended for debugging rather than improved security (use the U option for security).
+21:03 <@mulander> let's see how that maps to mopts
+21:03 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#526
+21:04 <@mulander> it maps to two options malloc_freenow and malloc_freeunmap
+21:04 <@mulander> we can see how both are defined in the malloc_readonly struct
+21:04 <@mulander> int malloc_freenow;     /* Free quickly - disable chunk rnd */
+21:04 <@mulander> int malloc_freeunmap;   /* mprotect free pages PROT_NONE? */
+21:05 <@mulander> so we need to go through all occurences of both
+21:05 <@mulander> let's start with freenow which has less hits
+21:05 <@mulander> first two are option parsing
+21:05 <@mulander> next up we have ofree
+21:05 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1306
+21:06 <@mulander> freenow disables checking the chunk canaries we read about yesterday
+21:07 <@mulander> it also disables junking verification ('J') at least in ofree
+21:08 <@mulander> and skips at least one method checking for a double free
+21:08 <@mulander> the last hit is in stats printing, and we know that is not  compiled in by default
+21:10 <@mulander> now for malloc_freeunmap
+21:10 <@mulander> first hit in unmap http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#336
+21:10 <@mulander> we know that function from previous reads
+21:11 <@mulander> first one on line 387 prevents malloc junking writing the pattern
+21:12 <@mulander> the second hit on line 392 is the bulk of the functionality
+21:12 <@mulander> it sets the page to PROT_NONE meaning we can't read, write or execute the memory
+21:13 <@mulander> next hits are in map http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#428
+21:14 <@mulander> so previously when putting back memory onto the freelist we marked it PROT_NONE
+21:14 <@mulander> touching that page would cause a segfault
+21:15 <@mulander> here when picking it back from the free-list we mark it again as read & write allowed on line 461
+21:16 <@mulander> with 'J' (full junking) we also allow the junk to be added to the re-used page
+21:16 <@mulander> so this only happens on 'JF'
+21:17 <@mulander> same handling for big allocations in line 476
+21:17 <@mulander> next up we have parsing
+21:17 <@mulander> worht to note freeunmap is set in 'f' and 'F'
+21:17 <@mulander> but also in 'u' and 'U'
+21:17 <@mulander> documentation for U states
+21:18 <@mulander> "Free unmap". Enable use after free protection for larger allocations. Unused pages on the freelist are read and write protected to cause a segmentation fault upon access.
+21:18 <@mulander> moving on
+21:18 <@mulander> free_bytes
+21:18 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1088
+21:23 <@mulander> free_bytes is called from stats dumping and from ofree
+21:24 <@mulander> it prevents the page being set read|write for 0 size allocations
+21:26 <@mulander> while looking thorugh git blame to see why this if is there
+21:26 <@mulander> I found some insightful commits
+21:26 <@mulander> https://github.com/openbsd/src/commit/73d5595feaea96ca4761ade8a69cd014aff93dd0
+21:27 <@mulander> Rationale: guarding with no chunk randomisation is great for debugging
+21:27 <@mulander> use-after-free, but chunk randomisation offers better defence against
+21:27 <@mulander> "heap feng shui" style attacks that depend on carefully constructing a
+21:27 <@mulander> particular heap layout so we should leave this enabled when requesting
+21:27 <@mulander> security options.
+21:27 <@mulander> not related to the if but a nice bit of info
+21:28 <@mulander> moving on
+21:28 <@mulander> ofree
+21:28 <@mulander> http://bxr.su/s?refs=ofree&project=OpenBSD
+21:28 <@mulander> again a piece of code we read before
+21:30 <@mulander> the code path here prevents the page being set back to read|write when both malloc guard and 'F' is defined
+21:33 <@mulander> from our previous read on this section
+21:33 <@mulander> 21:53 <@mulander> this removes the PROT_NONE from the malloc_guard
+21:33 <@mulander> 21:54 <@mulander> with 'F' we want to keep it, as 'F' is for detecting use after free so having the page still protected is more likely to crash on use after free
+21:33 <@mulander> 21:54 <@mulander> without that option there is no delayed freeing so this memory is no longer considered protected and we just 'pull out' the malloc guard from it
+21:33 <@mulander> 21:55 <@mulander> that's it for ofree
+21:34 <@mulander> src: https://junk.tintagel.pl/openbsd-daily-malloc-4.txt
+21:34 <@mulander> and our last occurrence on line 2355
+21:34 <@mulander> is just dumping stats which again is not compiled in by default.
+21:35 <@mulander> so in summary, when free'ing the memory is marked PROT_NONE so all writes to it should cause a crash
+21:35 <@mulander> (and reads from it)
+21:35 <@mulander> (and attempts to execute it)
+21:35 <@mulander> let's lightly modify our canary example
+21:35 <@mulander> first version 'G' flag cmpiled
+21:35 <@mulander> *compiled
+21:36 -!- Irssi: Pasting 5 lines to #openbsd-daily. Press Ctrl-K if you wish to do this or Ctrl-C to cancel.
+21:36 <@mulander> Writing byte 8190
+21:36 <@mulander> Writing byte 8191
+21:36 <@mulander> $ echo $?
+21:36 <@mulander> 0
+21:36 <@mulander> $ 
+21:36 <@mulander> executed with no errors
+21:36 <@mulander> the code:
+21:36 <@mulander> https://junk.tintagel.pl/no-freeguard.c
+21:37 <@mulander> we did our buffer overwrite (undetected) without hitting a guard page
+21:37 <@mulander> called free on our buffer
+21:37 <@mulander> and proceeded to write over the same memory again, including the freed region
+21:38 <@mulander> now, let's change 'G' to 'F'
+21:38 <@mulander> https://junk.tintagel.pl/freeguard.c
+21:38 <@mulander> Writing byte 8191
+21:38 <@mulander> Writing byte 5096
+21:38 <@mulander> Segmentation fault (core dumped) 
+21:39 <@mulander> $ echo $?
+21:39 <@mulander> 139
+21:39 <@mulander> and last test
+21:40 <@mulander> we know 'U' should be similar to 'F' but without immediate release
+21:40 <@mulander> Writing byte 8191
+21:40 <@mulander> Writing byte 5096
+21:40 <@mulander> Segmentation fault (core dumped) 
+21:41 <@mulander> https://junk.tintagel.pl/u-freeguard.c
+21:41 <@mulander> and that pretty much covers 'F' and 'U' options of malloc.
+21:42 <@mulander> --- DONE ---

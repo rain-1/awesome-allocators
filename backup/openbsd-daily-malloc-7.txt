@@ -1,0 +1,187 @@
+21:01 [Users #openbsd-daily]
+21:01 [@dlg           ] [ cengizIO   ] [ fyuuri       ] [ lteo[m]   ] [ quinq    ] [ tdmackey_    ] 
+21:01 [ __gilles[away]] [ corbyhaas  ] [ g0relike     ] [ lucias    ] [ rain1    ] [ Technaton    ] 
+21:01 [ abecker       ] [ davl       ] [ geetam       ] [ luisbg    ] [ rEv9     ] [ thrym        ] 
+21:01 [ administ1aitor] [ Dhole      ] [ ghostyy      ] [ mandarg   ] [ rgouveia_] [ timclassic   ] 
+21:01 [ akfaew        ] [ dial_up    ] [ ghugha       ] [ mattl     ] [ rnelson  ] [ TronDD       ] 
+21:01 [ akkartik      ] [ dmfr       ] [ Guest96088   ] [ metadave  ] [ ryan     ] [ turlando     ] 
+21:01 [ antoon_i      ] [ dostoyevsky] [ harrellc10per] [ mikeb     ] [ S007     ] [ TuxOtaku     ] 
+21:01 [ antranigv     ] [ dsp        ] [ Harry_       ] [ mikeputnam] [ SETW     ] [ ule          ] 
+21:01 [ apotheon      ] [ DuClare    ] [ horia        ] [ mpts      ] [ shazaum  ] [ vbarros      ] 
+21:01 [ ar            ] [ duncaen    ] [ jbernard     ] [ mulander  ] [ sid77    ] [ viq          ] 
+21:01 [ azend|vps     ] [ dxtr       ] [ jsing        ] [ Naabed-_  ] [ skizye   ] [ vmlinuz      ] 
+21:01 [ bcd           ] [ eau        ] [ jwit         ] [ nacci     ] [ skrzyp   ] [ vyvup        ] 
+21:01 [ bch           ] [ ebag_      ] [ kAworu       ] [ nacelle   ] [ smiles`  ] [ weezelding   ] 
+21:01 [ biniar        ] [ emigrant   ] [ kittens      ] [ Niamkik   ] [ Soft     ] [ whyt         ] 
+21:01 [ brianpc       ] [ entelechy  ] [ kl3          ] [ oldlaptop ] [ stateless] [ wilornel     ] 
+21:01 [ brianritchie  ] [ erethon    ] [ kpcyrd       ] [ owa       ] [ swankier ] [ WubTheCaptain] 
+21:01 [ brtln         ] [ fcambus    ] [ kraucrow     ] [ petrus_lt ] [ t_b      ] [ xor29ah      ] 
+21:01 [ bruflu        ] [ filwisher  ] [ kysse        ] [ phy1729   ] [ tarug0   ] [ zelest       ] 
+21:01 [ brynet        ] [ flopper    ] [ landers2     ] [ qbit      ] [ tdjones  ] 
+21:01 -!- Irssi: #openbsd-daily: Total of 113 nicks [1 ops, 0 halfops, 0 voices, 112 normal]
+21:02 < mulander> --- code read: malloc - finishing up ---
+21:02 < mulander> *** goal: go through the remaining malloc options ***
+21:02 < mulander> code: http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c
+21:02 < mulander> version: /*  $OpenBSD: malloc.c,v 1.226 2017/06/19 03:06:26 dlg Exp $    */
+21:03 < mulander> man: https://man.openbsd.org/malloc
+21:03 < mulander> man: https://man.openbsd.org/malloc.conf.5
+21:04 < mulander> it's not the first time we are reading malloc, so let's re-iterate what options we covered and what we have left
+21:04 < mulander> covered:
+21:04 < mulander> - 'C' canaries
+21:04 < mulander> - 'F' freeguards
+21:05 < mulander> - 'G' guard pages
+21:05 < mulander> - 'J' junking
+21:05 < mulander> - 'U' use after free protection
+21:05 < mulander> remaining:
+21:06 < mulander> - 'D' statistics 
+21:06 < mulander> - 'R' always reallocate memory on realloc(3)
+21:07 < mulander> - 'S' enable options suitable for security auditing
+21:07 < mulander> - 'X' xmalloc, report instead of abort
+21:08 < mulander> - '<' half cache
+21:08 < mulander> - '>' double cache
+21:08 < mulander> - internal canaries if we have time
+21:09 < mulander> we will try to keep it fast as we already went through most of this code before
+21:09 < mulander> let's go from the top
+21:09 < mulander> the 'D' option is defined as
+21:09 < mulander> "Dump". malloc(3) will dump statistics to the file ./malloc.out, if it already exists, at exit. This option requires the library to have been compiled with -DMALLOC_STATS in order to have any effect.
+21:09 < mulander> we saw this code before, it is not compiled in by default as the docs state
+21:10 < mulander> the option maps to mopts.malloc_stats in omalloc_parseopt
+21:10 < mulander> there are exactly 4 occurrences of mopts.malloc_stats
+21:10 < mulander> first in wrterror http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#274
+21:13 < mulander> this dumps malloc statistics to stderr per each working malloc when an error occurs
+21:13 < mulander> where an error is ie. lack of memory or detecting an inconsistency
+21:14 < mulander> the 2nd and 3rd occurrence is for parsing the option
+21:14 < mulander> and the last one at line 629
+21:15 < mulander> if malloc_stats is defined we try to set an atexit handler
+21:15 < mulander> if that setup fails we report an error and bail out
+21:15 < mulander> that would be very early in program exectution as it's called from omalloc_init
+21:16 < mulander> now, there is a global define MALLOC_STATS
+21:16 < mulander> that defines what gets compiled in
+21:16 < mulander> interesting bits
+21:16 < mulander> line 106 - void *f;
+21:16 < mulander> is a pointer there us where the allocation came from
+21:17 < mulander> if we recall the otto paper from our first read it showed us how to use GDB to map that to an actual line of code
+21:17 < mulander> L132-L154 define a bunch of counters and helper macros to work on those
+21:18 < mulander> without MALLOC_STATS those macros are just comments
+21:18 < mulander> we also define the malloc_stats flag
+21:18 < mulander> headers for the stats dump functions
+21:18 < mulander> error handler dump we already saw
+21:19 < mulander> parsing code we already saw
+21:19 < mulander> (interrupt me if I am going too fast)
+21:19 < mulander> initialization in omalloc_init we already saw
+21:19 < mulander> code in insert
+21:19 < mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#775
+21:19 < mulander> 770/*
+21:19 < mulander> 771 * The hashtable uses the assumption that p is never NULL. This holds since
+21:19 < mulander> 772 * non-MAP_FIXED mappings with hint 0 start at BRKSIZ.
+21:19 < mulander> 773 */
+21:20 < mulander> L 796-798 stores from where the allocation was requested
+21:21 < mulander> again in malloc_bytes
+21:21 < mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#952
+21:21 < mulander> on L1000-L1004 we again store the source of the allocation
+21:21 < mulander> and a big chunk of code since L2079 up to L2372
+21:22 < mulander> handles dumping the collected information
+21:23 < mulander> ok, that covers 'D'
+21:23 < mulander> now for 'R'
+21:23 < mulander> thi maps to mopts.malloc_realloc
+21:23 < mulander> int malloc_realloc;     /* always realloc? */
+21:24 < mulander> first occurrence is the definition, the next two are option parsing
+21:24 < mulander> next up we have orealloc
+21:24 < mulander> 1545    if (newsz > MALLOC_MAXCHUNK && oldsz > MALLOC_MAXCHUNK &&
+21:24 < mulander> 1546        !mopts.malloc_realloc) {
+21:24 < mulander> 1547        /* First case: from n pages sized allocation to m pages sized
+21:24 < mulander> 1548           allocation, m > n */
+21:24 < mulander> if malloc_realloc is set it completely disables this code path
+21:25 < mulander> we also disable
+21:25 < mulander> 1638    if (oldsz <= MALLOC_MAXCHUNK && oldsz > 0 &&
+21:25 < mulander> 1639        newsz <= MALLOC_MAXCHUNK && newsz > 0 &&
+21:25 < mulander> 1640        1 << find_chunksize(newsz) == oldsz && !mopts.malloc_realloc) {
+21:25 < mulander> 1641        /* do not reallocate if new size fits good in existing chunk */
+21:26 < mulander> intead we always reallocate
+21:26 < mulander> 1650    } else if (newsz != oldsz || mopts.malloc_realloc) {
+21:26 < mulander> 1651        /* create new allocation */
+21:26 < mulander> which means also reallocating if the new size is equal the old size
+21:26 < mulander> skipping the code path at line 1661
+21:27 < mulander> last hit is at malloc_exit which is just stat dumping
+21:29 < mulander> that covers 'R'
+21:29 < mulander> next up 'S'
+21:29 < mulander> this one will be fast
+21:30 < mulander> the only handling present is in omalloc_init
+21:30 < mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#576
+21:30 < mulander> for 'S' CGJ is added to malloc opts
+21:30 < mulander> for 's' cgj is added
+21:30 < mulander> lowercase disables options, uppercase enables them
+21:30 < mulander> so for 'S' security auditing we enable chunk canaries, guard pages and full junking
+21:31 < mulander> and this covers this options as it just triggers code paths we already followed.
+21:31 < mulander> moving on to 'X' xmalloc
+21:31 < mulander> documentation states
+21:31 < mulander> "xmalloc". Rather than return failure, abort(3) the program with a diagnostic message on stderr. It is the intention that this option be set at compile time by including in the source:
+21:31 < mulander> extern char *malloc_options; 
+21:31 < mulander> malloc_options = "X";
+21:31 < mulander>     
+21:31 < mulander> Note that this will cause code that is supposed to handle out-of-memory conditions gracefully to abort instead.
+21:32 < mulander> so followin the usual path
+21:32 < mulander> we check what it maps to in mopts
+21:32 < mulander> and we find on L560-566
+21:32 < mulander> that it's mopts.malloc_xmalloc
+21:33 < mulander> int malloc_xmalloc;     /* xmalloc behaviour? */
+21:33 < mulander> next two hits are the parsing code
+21:33 < mulander> then we have a hit in malloc
+21:33 < mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1256
+21:34 < mulander> 1274    r = omalloc(d, size, 0, CALLER);
+21:34 < mulander> 1275    d->active--;
+21:34 < mulander> 1276    _MALLOC_UNLOCK(d->mutex);
+21:34 < mulander> 1277    if (r == NULL && mopts.malloc_xmalloc)
+21:34 < mulander> 1278        wrterror(d, "out of memory");
+21:34 < mulander> matches the option description
+21:34 < mulander> if omalloc returned null and xmalloc is defined - bail out with an error
+21:35 < mulander> otherwise we would just return NULL expecting the caller to handle this.
+21:35 < mulander> next occurrence in realloc
+21:35 < mulander> line 1700
+21:35 < mulander> exactly the same handling
+21:35 < mulander> then calloc on line 1716
+21:36 < mulander> there are 2 places where we can bail out with no memory
+21:36 < mulander> next, same handling in recallocarray
+21:36 < mulander> again 2 places where we bail out stating no memory instead of propagating the error
+21:37 < mulander> next in posix_memalign - same handling L2064 - bail out instead of propagating the rror
+21:37 < mulander> and finally on line 2356 - just printing stats, not compiled in by default.
+21:37 < mulander> so this covers 'X'
+21:37 < mulander> now '<' and '>'
+21:38 < mulander> both options map to mopts.malloc_Cache
+21:38 < mulander> *mopts.malloc_cache
+21:38 < mulander> it's either left shifted by 1 or right shifted by one
+21:38 < mulander> esentially doubling the cache or decreasing it by half
+21:39 < mulander> for doubling we have an upper bound
+21:39 < mulander> of MALLOC_MAXCACHE
+21:39 < mulander> which is 256
+21:40 < mulander> first we see our options defined
+21:40 < mulander> u_int   malloc_cache;       /* free pages we cache */
+21:40 < mulander> next unmap
+21:40 < mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#336
+21:40 < mulander> we wen't trhough this function before
+21:41 < mulander> 348    /*
+21:41 < mulander> 349     * normally the cache holds recently freed regions, but if the region
+21:41 < mulander> 350     * to unmap is larger than the cache size or we're clearing and the
+21:41 < mulander> 351     * cache is full, just munmap
+21:41 < mulander> 352     */
+21:41 < mulander> we went through all branches dicussing how cache behaves here on either our first or second readout
+21:42 < mulander> next zapcacheregion on line 407
+21:43 < mulander> called from orealloc
+21:43 < mulander> when extending an existing region
+21:45 < mulander> looks like it drops pages from the cache that are in the way of the extending allocation
+21:45 < mulander> next up map on line 428
+21:46 < mulander> we also went through it before
+21:47 < mulander> skipping as no point to re-iterate what was said in read 1 or 2
+21:47 < mulander> next up parsing, also self-explenatory
+21:47 < mulander> then init in line 585
+21:47 < mulander> to the default cache size
+21:48 < mulander> which is 64
+21:48 < mulander> and we see what I didn't notice when going through 'S' before
+21:48 < mulander> for 'S' cache is dissabled
+21:48 < mulander> *disabled
+21:48 < mulander> for 's' it's set back to default 64
+21:49 < mulander> finally we see the value being dumped in MALLOC_STATS not compiled in by default.
+21:50 < mulander> think we will call it wraps here
+21:50 < mulander> I do think internal canaries are interesting so let's give them a full 1.5h read tomorrow
+21:50 < mulander> as a wrap up for malloc
+21:51 < mulander> --- DONE ---

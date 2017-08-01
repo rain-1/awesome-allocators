@@ -1,0 +1,191 @@
+21:07 [Users #openbsd-daily]
+21:07 [@dlg           ] [ bruflu     ] [ flopper      ] [ lteo[m]   ] [ qbit     ] [ tdmackey_    ] 
+21:07 [@mulander      ] [ brynet     ] [ geetam       ] [ lucias    ] [ quinq    ] [ Technaton    ] 
+21:07 [ __gilles[away]] [ cengizIO   ] [ ggg_         ] [ luisbg    ] [ rabbitear] [ thrym        ] 
+21:07 [ abecker       ] [ corbyhaas  ] [ ggg```       ] [ mandarg   ] [ rain1    ] [ timclassic   ] 
+21:07 [ acgissues     ] [ davl       ] [ ghostyy      ] [ mattl     ] [ rEv9     ] [ TronDD       ] 
+21:07 [ administ1aitor] [ Dhole      ] [ ghugha       ] [ metadave  ] [ rgouveia_] [ TronDD-w     ] 
+21:07 [ akfaew        ] [ dmfr       ] [ Guest96088   ] [ mikeb     ] [ rnelson  ] [ TuxOtaku     ] 
+21:07 [ akkartik      ] [ dostoyevsky] [ harrellc10per] [ mikeputnam] [ ryan     ] [ Vaelatern    ] 
+21:07 [ antoon_i_     ] [ Dowzee     ] [ Harry_       ] [ mpa80     ] [ S007     ] [ vbarros      ] 
+21:07 [ antranigv     ] [ DrPete     ] [ horia        ] [ mpts      ] [ SETW     ] [ viq          ] 
+21:07 [ apotheon      ] [ dsp        ] [ jaypatelani  ] [ Naabed-_  ] [ sgnorptz_] [ vmlinuz      ] 
+21:07 [ ar            ] [ DuClare    ] [ jbernard     ] [ nacci_    ] [ sid77    ] [ vyvup        ] 
+21:07 [ asie          ] [ duncaen    ] [ jsing`       ] [ nacelle   ] [ sips     ] [ weezelding   ] 
+21:07 [ azend|vps     ] [ dxtr       ] [ kAworu       ] [ nailyk    ] [ skrzyp   ] [ whyt         ] 
+21:07 [ bcd           ] [ eau        ] [ kittens      ] [ Niamkik   ] [ smiles`  ] [ Wilawar      ] 
+21:07 [ bch           ] [ ebag_      ] [ kl3          ] [ noexcept_ ] [ Soft     ] [ wilornel     ] 
+21:07 [ benpicco_     ] [ emigrant   ] [ kpcyrd       ] [ oldlaptop ] [ stateless] [ wodim        ] 
+21:07 [ biniar        ] [ entelechy  ] [ kraucrow     ] [ owa       ] [ swankier ] [ WubTheCaptain] 
+21:07 [ brianpc_      ] [ erethon    ] [ ktd          ] [ petrus_lt ] [ t_b      ] [ xor29ah      ] 
+21:07 [ brianrit1hie  ] [ fcambus_   ] [ kysse        ] [ phy1729   ] [ tarug0   ] [ zelest       ] 
+21:07 [ brtln         ] [ filwishe1  ] [ landers2     ] [ pyuuun    ] [ tdjones  ] 
+21:07 -!- Irssi: #openbsd-daily: Total of 125 nicks [2 ops, 0 halfops, 0 voices, 123 normal]
+21:07 <@mulander> --- code read: malloc guard pages ---
+21:07 <@mulander> *** learn how the 'G' option handling guard pages is implemented ***
+21:08 <@mulander> On last malloc reads we went through 'j' and 'J' that hundle junking the memory on allocation and frees (depending on the level)
+21:08 <@mulander> going through that code path we saw code handling guard pages
+21:10 <@mulander> recap of materials:
+21:10 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c
+21:10 <@mulander> http://man.openbsd.org/malloc
+21:10 <@mulander> http://man.openbsd.org/malloc.conf.5
+21:10 <@mulander> ok, the 'G' and 'g' options are parsed as values to mopts.malloc_guard
+21:12 <@mulander> by default the value is unset in code, but since mopts is global it will be set to 0
+21:14 <@mulander> when parsed the options either explicitly set malloc_guard to 0 (disable with 'g')
+21:14 <@mulander> or set the value to MALLOC_PAGESIZE
+21:14 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#534
+21:16 <@mulander> #define MALLOC_PAGESIZE     (1UL << MALLOC_PAGESHIFT)
+21:16 <@mulander> we know that malloc_pageshift is platform dependant and for our amd64 example it's defined as 12
+21:18 <@mulander> so so our MALLOC_PAGESIZE for amd64 is 4096 bytes
+21:18 <@mulander> and that's the value (on amd64) that is set to malloc_guard
+21:18 <@mulander> now let's go over occurences of malloc_guard, from the top
+21:19 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#70
+21:19 <@mulander> first we have a set of macros defined
+21:21 <@mulander> for calculating sizes for moves
+21:21 <@mulander> malloc_guard size is just accounted for in those
+21:22 <@mulander> next occurrence is found on line 142 inside MALLOC_STATS not compiled in by default
+21:22 <@mulander> and as the comment states, used to track how many bytes are actually spent on the malloc guards
+21:23 <@mulander> next hit L190, the option defined in mopts
+21:23 <@mulander> and first code hit in unmap
+21:23 <@mulander> we wen't over that one before fully so we won't go through the whole flow again
+21:23 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#386
+21:24 <@mulander> the hit is on L386
+21:24 <@mulander> when unmap is called with the clear flag to zero out memory
+21:24 <@mulander> we actually account for the malloc_guard - the requested area is zeroed and the guard is left untouched.
+21:25 <@mulander> next two hits are option parsing, we went over those before
+21:25 <@mulander> and then we hit omalloc
+21:25 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1133
+21:26 <@mulander> we know that maxchunk on our platform is 2048 bytes from our last reads
+21:27 <@mulander> if the requested allocation is smaller than last chunk (the else branch) we have nothing of interest for us
+21:27 <@mulander> as malloc_bytes has no malloc_guard handling code
+21:27 <@mulander> if the requested allocation is larger than 2048 bytes
+21:28 <@mulander> first check makes sure the requested memory is a sane vvalue
+21:29 <@mulander> accounting for the malloc guard and the page size
+21:29 <@mulander> if not, we bail with no memory
+21:30 <@mulander> next, the requested size is increased by the size of the malloc_guard (4k)
+21:30 <@mulander> and the size is rounded
+21:31 <@mulander> we then call map to obtain the memory either from the OS or from our caches/freelist
+21:31 <@mulander> we don't remember any guard page handling there
+21:32 <@mulander> next we insert the newly allocated page into our directory
+21:33 <@mulander> looking inside insert, thhat's our freelist.
+21:33 <@mulander> if that operation fails we call unmap
+21:33 <@mulander> and it does have code for malloc_guard so let's jump there briefly
+21:34 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#unmap
+21:34 <@mulander> L386
+21:34 <@mulander> ok that's what we covered above in this read
+21:34 <@mulander> clear is the last flag for unmap
+21:34 <@mulander> and we can see unmap being called with clear '0' here
+21:35 <@mulander> so that code path iss not triggered
+21:35 <@mulander> next block is explicitly for malloc_guard (back on L1155)
+21:36 <@mulander> at this point we have a chunk of memory, we call mprotect on it passing the start of the malloc guard page (psz - mopts.malloc_guard) and setting PROT_NONE for the whole size of malloc_guard (4096 bytes)
+21:36 <@mulander> this means that this page has no permissions (read, write, execute)
+21:36 <@mulander> and attempting to do any of that on this part of memory would result in a crash
+21:37 <@mulander> ie. if the allocation was a string, and we tried to write over it - we should crash
+21:37 <@mulander> and since this is an option we can write a test program just to see that in action
+21:37 <@mulander> but first let's go over the rest of the code
+21:38 <@mulander> our junking code from yesterday with 'J'
+21:39 <@mulander> just accounts to not touch our malloc guard
+21:39 <@mulander> and now we know why, I overlooked that yesterday
+21:39 <@mulander> if it tried to, we would crash in the allocator itself
+21:39 <@mulander> as we just seet that page to PROT_NONE
+21:39 <@mulander> same for 'J' and when called we clear
+21:39 <@mulander> we just avoid touching the page in the allocator
+21:41 <@mulander> the same can bee seen in the second branch
+21:41 <@mulander> at least for the 'J' path and clearing
+21:41 <@mulander> there's an additional one for chunk canaries
+21:41 <@mulander> and that's the same thing, it avoids touching the guard page while writing the canary
+21:42 <@mulander> that's all for this code path
+21:42 <@mulander> now for ofree
+21:42 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1306
+21:43 <@mulander> we saw this code before and went over it
+21:43 <@mulander> so I'm going to focus on the paths hitting malloc_guard
+21:45 <@mulander> when freeing large allocations (>2048 bytes)
+21:45 <@mulander> 1354        } else if (sz - mopts.malloc_guard < argsz) {
+21:45 <@mulander> 1355            wrterror(pool, "recorded size %zu < %zu",
+21:45 <@mulander> 1356                sz - mopts.malloc_guard, argsz);
+21:45 <@mulander> 1357        }
+21:46 <@mulander> so I just checked call sites for ofree
+21:46 <@mulander> and looks like the recorded size is only passed from freezero
+21:46 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1480
+21:47 <@mulander> which is a fairly new addition on current
+21:47 <@mulander> http://man.openbsd.org/freezero
+21:47 <@mulander> Used for the allocation of memory holding sensitive data, the recallocarray() and freezero() functions guarantee that memory becoming unallocated is explicitly discarded, meaning pages of memory are disposed via munmap(2) and cached free objects are cleared with explicit_bzero(3).
+21:48 <@mulander> freezero has the size of the freed structure
+21:49 <@mulander> so that helps catching when the user asked to clear less memory than was actually recorded as used by that allocation
+21:49 <@mulander> (accounting for the malloc_guard size as unused)
+21:50 <@mulander> next there are 2 code paths
+21:50 <@mulander> again no malloc_guard with the else branch handling smaller than 2048 byte allocations
+21:50 <@mulander> in the > MALLOC_MAXCHUNK branch we first check canaries
+21:50 <@mulander> and again we just avoid the canary from touching the malloc_guard
+21:51 <@mulander> next hit in the dedicated mopts.malloc_guard if
+21:52 <@mulander> there's a sanity check, as the 'sz' contains the size of the requested memory including the malloc_guard
+21:52 <@mulander> if that size is less than the malloc_guard then this is an inconsistency
+21:53 <@mulander> the check is then disabled if 'F' was defined
+21:53 <@mulander> ah actually it's not a check
+21:53 <@mulander> this removes the PROT_NONE from the malloc_guard
+21:54 <@mulander> with 'F' we want to keep it, as 'F' is for detecting use after free so having the page still protected is more likely to crash on use after free
+21:54 <@mulander> without that option there is no delayed freeing so this memory is no longer considered protected and we just 'pull out' the malloc guard from it
+21:55 <@mulander> that's it for ofree
+21:55 <@mulander> now orealloc
+21:55 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1488
+21:55 <@mulander> we also went over this one before
+21:56 <@mulander> so focusing only on malloc_guard
+21:56 <@mulander> first hit, size sanity check we saw before in omalloc
+21:57 <@mulander> next, if we the old size is larger than 2048 bytes
+21:57 <@mulander> and the old size is smaller than the malloc guard, then we have an inconsistency
+21:57 <@mulander> as it had to have a malloc guard
+21:58 <@mulander> next we do some account for hte malloc guard size when resizing
+21:58 <@mulander> and our realloc cases
+21:59 <@mulander> explicitly only runs when there is no malloc_guard so we skip this one
+21:59 <@mulander> the old malloc_guard page region is marked as read|write and the new region is marked as PPROT_NONE
+22:00 <@mulander> - /* number of pages remains the same */
+22:00 <@mulander> just 'J' handling, making sure it doesn't touch the protected malloc_guard page
+22:00 <@mulander> and that's all for orealloc
+22:02 <@mulander> next orecallocarray
+22:03 <@mulander> again a check for the recorded size, same as we saw with freezero
+22:03 <@mulander> the old size can't be smaller than malloc_guard
+22:03 <@mulander> next omemalign
+22:03 <@mulander> http://bxr.su/s?refs=omemalign&project=OpenBSD
+22:04 <@mulander> we went over the code for junking
+22:04 <@mulander> there is a sanity size check first (for checking a request to more memory than we can give)
+22:05 <@mulander> then accounting that the size needs to contain the malloc_guard
+22:05 <@mulander> round it
+22:06 <@mulander> and with malloc_guard enabled
+22:06 <@mulander> protect the memory region with mprotect PROT_NONE
+22:06 <@mulander> and then with junking and canaries just avoid touching the protected area
+22:06 <@mulander> finall occurences are in malloc_dum1
+22:06 <@mulander> *malloc_dump1
+22:07 <@mulander> for stats reporting
+22:07 <@mulander> and for malloc_exit
+22:07 <@mulander> that's also stats reporting
+22:07 <@mulander> that code is not compiled in by default
+22:07 <@mulander> ok so that covers the whole thing
+22:08 <@mulander> let's write a sample program that mallocs memory and writes past the allocation
+22:08 <@mulander> run it without 'G'
+22:08 <@mulander> then compile the program with malloc options 'G'
+22:08 <@mulander> and re-test
+22:09 <@mulander> we know that our allocation has to be larger than 2048 to have the guard page added
+22:10 < DuClare> For bonus points, experiment with the size to try and find the maximum number of bytes you can overrun due to alignment.
+22:16 <@mulander> yeah
+22:16 <@mulander> so without 'G'
+22:16 <@mulander> I get killed on page boundaries
+22:16 <@mulander> here's sample code without 'G'
+22:17 <@mulander> https://junk.tintagel.pl/no-guard.c
+22:17 <@mulander> and it's sample output
+22:18 <@mulander> Writing byte 8190
+22:18 <@mulander> Writing byte 8191
+22:18 <@mulander> Writing byte 8192
+22:18 <@mulander> Segmentation fault (core dumped) 
+22:20 <@mulander> now compiling with the guard
+22:22 <@mulander> I'm either doing it wrong
+22:22 < DuClare> I don't think you're doing it wrong.
+22:22 <@mulander> I don't see a difference with "G"
+22:23 <@mulander> https://junk.tintagel.pl/guard.c
+22:23 < DuClare> So the thing is, 'G' guarantees that you have a guard page with these large allocations
+22:23 <@mulander> goes up to 8192 then segfaults
+22:23 < DuClare> Without g, it is possible that another allocation is back to back with your new allocation
+22:24 < DuClare> However it is likewise entirely possible that you just run off into unmapped space
+22:24 < DuClare> Which kills you just as a guard page would
+22:25 <@mulander> and with 'G' there will always be something between me and another allocation
+22:25 < DuClare> Right.
+22:27 <@mulander> --- DONE ---

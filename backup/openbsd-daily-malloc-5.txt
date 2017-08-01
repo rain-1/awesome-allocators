@@ -1,0 +1,176 @@
+21:12 [Users #openbsd-daily]
+21:12 [@dlg           ] [ bruflu     ] [ flopper      ] [ lucias    ] [ quinq    ] [ thrym        ] 
+21:12 [@mulander      ] [ brynet     ] [ g0relike     ] [ luisbg    ] [ rain1    ] [ timclassic   ] 
+21:12 [ __gilles[away]] [ cengizIO   ] [ geetam       ] [ mandarg   ] [ rEv9     ] [ TronDD       ] 
+21:12 [ abecker       ] [ corbyhaas  ] [ ggg_         ] [ martin__2 ] [ rgouveia_] [ TronDD-w     ] 
+21:12 [ acgissues     ] [ davl       ] [ ghostyy      ] [ mattl     ] [ rnelson  ] [ TuxOtaku     ] 
+21:12 [ acidfoo-_     ] [ Dhole      ] [ ghugha       ] [ metadave  ] [ ryan     ] [ ule          ] 
+21:12 [ administ1aitor] [ dial_up    ] [ Guest96088   ] [ mikeb     ] [ S007     ] [ Vaelatern    ] 
+21:12 [ akfaew        ] [ dmfr       ] [ harrellc10per] [ mikeputnam] [ SETW     ] [ vbarros      ] 
+21:12 [ akkartik      ] [ dostoyevsky] [ Harry_       ] [ mpts      ] [ shazaum  ] [ viq          ] 
+21:12 [ antoon_i      ] [ Dowzee     ] [ horia        ] [ Naabed-_  ] [ sid77    ] [ vmlinuz      ] 
+21:12 [ antranigv     ] [ dsp        ] [ jbernard     ] [ nacci     ] [ skizye   ] [ vyvup        ] 
+21:12 [ apotheon      ] [ DuClare    ] [ jsing        ] [ nacelle   ] [ skrzyp   ] [ weezelding   ] 
+21:12 [ ar            ] [ duncaen    ] [ kAworu       ] [ nailyk    ] [ smiles`  ] [ whyt         ] 
+21:12 [ asie          ] [ dxtr       ] [ kittens      ] [ Niamkik   ] [ Soft     ] [ Wilawar      ] 
+21:12 [ azend|vps     ] [ eau        ] [ kl3          ] [ noexcept_ ] [ stateless] [ wilornel     ] 
+21:12 [ bcd           ] [ ebag_      ] [ kpcyrd       ] [ oldlaptop ] [ swankier ] [ WubTheCaptain] 
+21:12 [ bch           ] [ emigrant   ] [ kraucrow     ] [ owa       ] [ t_b      ] [ xor29ah      ] 
+21:12 [ biniar        ] [ entelechy  ] [ ktd          ] [ petrus_lt ] [ tarug0   ] [ zelest       ] 
+21:12 [ brianpc       ] [ erethon    ] [ kysse        ] [ phy1729   ] [ tdjones  ] 
+21:12 [ brianritchie  ] [ fcambus    ] [ landers2     ] [ polishdub ] [ tdmackey_] 
+21:12 [ brtln         ] [ filwisher  ] [ lteo[m]      ] [ qbit      ] [ Technaton] 
+21:12 -!- Irssi: #openbsd-daily: Total of 123 nicks [2 ops, 0 halfops, 0 voices, 121 normal]
+21:13 <@mulander> --- code read: malloc canaries ---
+21:13 <@mulander> *** reading the implementation of malloc.conf 'C' option ***
+21:14 <@mulander> reading file: http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c
+21:14 <@mulander> version: /*  $OpenBSD: malloc.c,v 1.226 2017/06/19 03:06:26 dlg Exp $    */
+21:14 <@mulander> man pages:
+21:14 <@mulander>  - https://man.openbsd.org/malloc
+21:14 <@mulander>  - https://man.openbsd.org/malloc.conf.5
+21:16 <@mulander> the documentation for 'C' states:
+21:16 <@mulander> "Canaries". Add canaries at the end of allocations in order to detect heap overflows. The canary's content is checked when free(3) is called. If it has been corrupted, the process is aborted.
+21:17 <@mulander> so unlike guard pages this is not using mprotect
+21:18 <@mulander> let's start with mapping 'C' to an option and determining the default.
+21:18 <@mulander> 'C' and 'c' alter the chunk_canaries flag on mopts
+21:18 <@mulander> we know mopts is  global and chunk_canaries are not explicitly set
+21:18 <@mulander> so the default is 0 (canaries off)
+21:19 <@mulander> let's follow usage from the top
+21:19 <@mulander> first the flag declaration, then the option parsing code
+21:20 <@mulander> next we have code we didn't hit on our previous reads
+21:20 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#733
+21:20 <@mulander> alloc_chunk_info
+21:24 <@mulander> so this allocates the memory needed for the metadata holding the information about a page
+21:25 <@mulander> this is internally used by malloc_bytes vie omalloc_make_chunks
+21:26 <@mulander> first we calculate the size we need accounting for alignment
+21:27 <@mulander> there is apparently a free list for chunk metadata, which is separate from the page free list
+21:28 <@mulander> if there are no free chunk structures for reuse we ask the OS for memory to create one
+21:28 <@mulander> the structure is initialy zeroed out fully
+21:28 <@mulander> and on line 765 we see the chunk canary being set
+21:28 <@mulander> p->canary = d->canary1;
+21:29 <@mulander> it's unconditional
+21:29 <@mulander> so I assume that's an internal structure integrity canary unrelated to 'C'
+21:29 <@mulander> on line 745 we do have accounting for chunk canaries
+21:29 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#745
+21:30 <@mulander> from our previous reads we determined page size to be 4096 bytes on amd64
+21:31 <@mulander> count is determined at the start of the function based on the requested allocation size
+21:31 <@mulander> 738    if (bits == 0)
+21:31 <@mulander> 739        count = MALLOC_PAGESIZE / MALLOC_MINSIZE;
+21:31 <@mulander> 740    else
+21:31 <@mulander> 741        count = MALLOC_PAGESIZE >> bits;
+21:33 <@mulander> minsize is 16
+21:33 <@mulander> so for 0 bit allocations count would be 256
+21:36 <@mulander> and our canarie is count * sizeof(u_short) which is 2 bytes on my amd64 machine
+21:42 <@mulander> trying to understand what the right shift is achieving here
+21:42 <@mulander> in the else branch
+21:45 <@mulander> it's shifting the page ize by the amount of requested bytes
+21:45 <@mulander> *bits
+21:50 <@mulander> at this point I am not sure what it is actually accounting here for, this is dividing the pagesize by power of two times equal to the bits requested
+21:50 <@mulander> but apart from this impacting how much memory is memset at the end I don't see an impact/reason yet
+21:51 <@mulander> I will try to revisit this later in order to not stop us for too long
+21:51 < DuClare> It's the chunk size
+21:52 < DuClare> 2^bits
+21:52 < DuClare> So it just counts how many chunks fit in a page
+21:53 <@mulander> ah
+21:53 <@mulander> and with canaries enabled
+21:53 <@mulander> it has to account for each page having a 2 byte canary?
+21:53 <@mulander> s/page/chunk/
+21:54 <@mulander> moving on
+21:54 < DuClare> Yep
+21:54 <@mulander> DuClare: thanks
+21:55 <@mulander> next hit malloc_bytes
+21:55 <@mulander> we saw this code before, the first and second canary occurences are for internal structures 
+21:55 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1016
+21:55 <@mulander> is where we start to read
+21:55 <@mulander> (as we read that code fully before)
+22:00 <@mulander> with chunk_canaries on we store the size of our real allocation at the bits start for that chunk
+22:01 <@mulander> I assume that information is needed so we don't overwrite the canary ourselves while doing various operations on the memory
+22:01 <@mulander> like when reallocing
+22:02 <@mulander> on line 1024 we have our canary filled
+22:02 <@mulander> we remember from previous read that with 'J' on canaries don't work
+22:02 <@mulander> I think I didn't see that documented, might be worth to check later
+22:03 <@mulander> let's move on, fill_canary is the next function at line 1031
+22:04 <@mulander> check_sz is the size difference between the space allocated and the size requested by the user
+22:04 <@mulander> CHUNK_CHECK_LENGTH is defined as 32
+22:05 <@mulander> so at most we write 32 bytes for our canary after the requested allocated size
+22:06 <@mulander> next function is our canary validation at L1041 validate_canary
+22:07 <@mulander> it does the same size restriction to limit it's work to up most 32 bytes
+22:08 <@mulander> it then travels the memory byte by byte comparing if each byte matches SOME_JUNK
+22:08 <@mulander> defined as 0xdb
+22:08 <@mulander> this is the same one used for 'J' mallocs
+22:09 <@mulander> next occurrence omalloc
+22:10 <@mulander> we know malloc_bytes handles addng the cnaaries so the else branch is covered
+22:15 <@mulander> if the allocation takes the whole page we don't add the canary
+22:15 <@mulander> which seem like I may be misunderstanding what MALLOC_MOVE_COND does
+22:15  * mulander looks up the macro
+22:16 <@mulander> 76#define MALLOC_MOVE_COND(sz)    ((sz) - mopts.malloc_guard <        \
+22:16 <@mulander> 77                    MALLOC_PAGESIZE - MALLOC_LEEWAY)
+22:16 <@mulander> so if the requested size is less than a pagesize
+22:16 <@mulander> we don't add any canaries
+22:18 <@mulander> next up ofree
+22:18 <@mulander> I expect more here as docs said the validation happens here
+22:18 <@mulander> as in upon free
+22:19 <@mulander> we did go through that code before so scanning for canaries
+22:19 <@mulander> first hit on 1337
+22:20 <@mulander> is not checking a canary but retrieving the size we saw stored
+22:20 <@mulander> in the bits flag before, that was the size of actual requested allocation not including the added canaries
+22:23 <@mulander> at this point if the size changed we have a corruption or were asked to free more memory than we had (ie. via freezero)
+22:24 <@mulander> for larger allocations 2k on amd64
+22:24 <@mulander> we call our validate_canary that will check each byte being careful to not touch the guard page
+22:25 <@mulander> and again a path for small allocations
+22:26 <@mulander> stepping back
+22:26 <@mulander> to sz <= MALLC_MAXCHUNK
+22:26 <@mulander> that code path calls find_chunknum
+22:26 <@mulander> and taking a look at find_chunknum reveals
+22:26 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#find_chunknum
+22:26 <@mulander> that it also validates the canary
+22:27 <@mulander> scratch that
+22:27 <@mulander> last parameter tells it to sip the check
+22:27 <@mulander> so it's validated on L1392
+22:28 <@mulander> next up orealloc
+22:28 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1488
+22:28 <@mulander> we also read this before
+22:28 <@mulander> on line 1529 we find the chunk info but find_chunknum is called without being asked to validate the canary
+22:29 <@mulander> next up
+22:29 <@mulander> - /* try to extend existing region */
+22:30 < DuClare> 22:53 <@mulander> it has to account for each page having a 2 byte canary?
+22:30 <@mulander> fills a new canary after the region is extended
+22:30 < DuClare> I'll note that those two bytes were used for the size, not the canary
+22:30 <@mulander> right
+22:30 <@mulander> DuClare: thanks, again :)
+22:31 <@mulander> unlike with guard pages, we don't have to worry about unmapping/cleraing the canary when resizing in orealloc
+22:31 <@mulander> but the new one has to be filled at a proper place
+22:31 <@mulander> same for /* shrink number of pages */
+22:31 <@mulander> and /* number of pages remains the same */
+22:31 <@mulander> branches
+22:31 <@mulander> one caveat is /* do not reallocate if new size fits good in existing chunk */
+22:32 <@mulander> which stores the new size on the info page and fills the canary
+22:33 <@mulander> next oreallocarray
+22:33 <@mulander> in line 1757
+22:33 <@mulander> only contains a sanity check on the recorded sizes as we saw before
+22:33 <@mulander> the rest is handled via omalloc which handles the canaries itself
+22:33 <@mulander> the find_chunknum call here also is instructed to  not to verify the canary
+22:34 <@mulander> next omemalign
+22:34 <@mulander> we saw this one also
+22:34 <@mulander> as a final step it fills the canary
+22:34 <@mulander> and last use case is malloc_exit
+22:34 <@mulander> which is just stats output and not compiled in by default
+22:37 <@mulander> now let's modify our example, to trigger a chunk canary
+22:38 <@mulander> Writing byte 8191
+22:38 <@mulander> $ echo $?
+22:38 <@mulander> 0
+22:38 <@mulander> $ 
+22:38 <@mulander> this is from no-canary.c
+22:38 <@mulander> https://junk.tintagel.pl/no-canary.c
+22:38 <@mulander> it has 'G' option compiled in
+22:39 <@mulander> and the guard page doesn't catch that we overwrote the allocated memory
+22:39 <@mulander> as we stopped before hitting a guard page
+22:39 <@mulander> https://junk.tintagel.pl/canary.c
+22:40 <@mulander> is the same code but with 'G' flag changed to 'C'
+22:40 <@mulander> compiled and ran
+22:40 <@mulander> Writing byte 8190
+22:40 <@mulander> Writing byte 8191
+22:40 <@mulander> canary(98940) in free(): chunk canary corrupted 0x90249cc0000 0x13e8@0x13e8
+22:40 <@mulander> Abort trap (core dumped) 
+22:40 <@mulander> detects that the canary was overwritten
+22:40 <@mulander> --- DONE ---

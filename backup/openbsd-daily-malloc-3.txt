@@ -1,0 +1,181 @@
+21:29 [Users #openbsd-daily]
+21:29 [@__gilles[away]] [ brianpc     ] [ entelechy    ] [ kraucrow  ] [ phy1729  ] [ tarug0       ] 
+21:29 [@akfaew        ] [ brianritchie] [ erethon      ] [ kysse     ] [ poptart  ] [ tdjones      ] 
+21:29 [@dlg           ] [ brtln       ] [ fcbsd        ] [ landers2  ] [ qbit     ] [ tdmackey     ] 
+21:29 [@fcambus       ] [ bruflu      ] [ filwishe1    ] [ lteo[m]   ] [ quinq    ] [ Technaton    ] 
+21:29 [@mikeb         ] [ brynet      ] [ floppo       ] [ lucias    ] [ rabbitear] [ thrym        ] 
+21:29 [@mulander      ] [ cengizIO    ] [ g0relike     ] [ luisbg    ] [ rajak    ] [ timclassic   ] 
+21:29 [@t_b           ] [ corbyhaas   ] [ geetam       ] [ mandarg   ] [ rEv9     ] [ TronDD       ] 
+21:29 [ acgissues     ] [ davl        ] [ ggg_         ] [ martin__2 ] [ rgouveia ] [ TronDD-w     ] 
+21:29 [ administraitor] [ deei        ] [ ggg``        ] [ mattl     ] [ rnelson  ] [ TuxOtaku     ] 
+21:29 [ akkartik      ] [ Dhole       ] [ ghostyy      ] [ metadave  ] [ ryan     ] [ Vaelatern    ] 
+21:29 [ anthk_        ] [ dmfr        ] [ ghugha       ] [ mikeputnam] [ S007     ] [ vbarros      ] 
+21:29 [ antoon_i      ] [ dostoyesvky ] [ harrellc00per] [ mpts      ] [ SETW     ] [ viq          ] 
+21:29 [ antranigv     ] [ Dowzee      ] [ Harry_       ] [ Naabed-   ] [ sgnorptz ] [ vmlinuz      ] 
+21:29 [ apotheon      ] [ DrPete      ] [ IcePic       ] [ nacci     ] [ sid77    ] [ vyvup        ] 
+21:29 [ ar            ] [ dsp_        ] [ jbernard     ] [ nacelle   ] [ skizye_  ] [ weezelding   ] 
+21:29 [ asie          ] [ DuClare     ] [ jsing        ] [ nailyk    ] [ skrzyp   ] [ whyt         ] 
+21:29 [ azend|vps     ] [ duncaen     ] [ kangmas      ] [ Niamkik   ] [ smiles`  ] [ wilornel     ] 
+21:29 [ bcd           ] [ dxtr        ] [ kAworu       ] [ noexcept1 ] [ Soft     ] [ wodim        ] 
+21:29 [ bch           ] [ eau         ] [ kittens      ] [ oldlaptop ] [ stateless] [ WubTheCaptain] 
+21:29 [ benpicco      ] [ ebag        ] [ kl3          ] [ owa       ] [ stsp     ] [ xor29ah      ] 
+21:29 [ biniar        ] [ emigrant    ] [ kpcyrd       ] [ petrus_lt ] [ swankier ] [ zelest       ] 
+21:29 -!- Irssi: #openbsd-daily: Total of 126 nicks [7 ops, 0 halfops, 0 voices, 119 normal]
+21:30 <@mulander> --- code read: malloc junking ---
+21:30 <@mulander> *** goals: yesterday we read how memory is junked on free
+21:30 <@mulander> *** now we will continue with the counterpart of memory being junked on allocation
+21:31 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#90
+21:31 <@mulander> SOME_JUNK 0xdb is used as the pattern
+21:32 <@mulander> our first hit lands in malloc_bytes
+21:32 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#952
+21:34 <@mulander> from the top, we start with the code checking the canarry on dir_info
+21:34 <@mulander> and bailing execution if it's corrupt
+21:35 <@mulander> then we attempt to find an already existing chunk of the requested size
+21:36 <@mulander> and create a new one if we fail to do so
+21:36 <@mulander> next we check the canarry on the chunk itself
+21:40 <@mulander> so bp is a page of chunks
+21:43 <@mulander> bits contains information on which chunks are free
+21:45 <@mulander> if there's more than one free chunk
+21:45 <@mulander> we move our chunk_start forward by the amount of bytes already in use
+21:50 <@mulander> having a hard time grokking what the bitwise and of total -1 is intended to do
+21:52 <@mulander> are those chunks just a bitmask
+21:54 < DuClare> You mean this one?  i &= bp->total - 1;
+21:54 < DuClare> Or another one?
+21:54 <@mulander> generally the operations on i here
+21:56 < DuClare> Well i is clearly used as an index into the bitmap
+21:59 <@mulander> I think it tries to find the first free spt in the chunk
+22:00 < DuClare> Yes.  Or "first" -- notice the random nudge before the nested loops
+22:00 <@mulander> and the for loop inspects each checking on the bits mask to see if they are taken
+22:02 <@mulander> can you point the random nudge? my bit fiddling foo is weak
+22:02 < DuClare> if (bp->free > 1)
+22:02 <@mulander> or can't see the forest for the trees to be more precise without a pen & paper
+22:02 < DuClare>                 i += getrbyte(d);
+22:02 <@mulander> yes, that one calls init with the arc4random
+22:03 <@mulander> when you said between the loops I assumed between for (;;) and for(;;)
+22:04 < DuClare> I said before the loops
+22:04 <@mulander> my bad, misread :(
+22:05 <@mulander> ok moving forward, we remove the page from the freelist if it has no more free chunks
+22:07 <@mulander> we store the allocation size as the chunk cannary
+22:08 <@mulander> then we get to our malloc
+22:08 <@mulander> *junking
+22:09 <@mulander> if 'J' was set, we junk the allocated chunk with SOME_JUNK
+22:09 <@mulander> without a size restriction
+22:10 <@mulander> apparently 'J' also excludes the use of chunk canaries
+22:10 <@mulander> looking at fill_canary
+22:10 <@mulander> it also uses the SOME_JUNK pattern
+22:12 <@mulander> if the requested size is smaller than the allocated size
+22:13 <@mulander> and larger than CHUNK_CHECK_LENGTH (32 bytes)
+22:13 <@mulander> the canarie would be filled past the requested allocation to the end of the allocated space
+22:14 <@mulander> but those features only exclude themselves when full junking ('J') is on
+22:14 <@mulander> jumping by SOME_JUNK I will also watch out, to not confuse canarie checking code with the alloc junking
+22:15 <@mulander> so we can skip fill_canary and validate_canary
+22:15 <@mulander> next call lands in omalloc
+22:15 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1133
+22:16 <@mulander> so last we checked on amd64 MALLOC_MAXCHUNK I believe came out as 2k
+22:16 <@mulander> if the requested allocation is smaller than that
+22:16 <@mulander> it goes to malloc_bytes
+22:17 <@mulander> and the comment states what we saw there , that it handles adding SOME_JUNK
+22:17 <@mulander> otherwise, wwe go through the other branch
+22:18 <@mulander> first malloc guard handling, then page rounding, then map
+22:18 <@mulander> which as we read before goes through the cache
+22:19 <@mulander> and does handle junking but only when it internally frees
+22:20 <@mulander> same for unmap
+22:21 <@mulander> again malloc guard handling
+22:22 <@mulander> if the request matches the whole allocation
+22:22 <@mulander> with juning set to 'J'
+22:22 <@mulander> we junk the whole size minus the space needed for the malloc guard
+22:23 <@mulander> if called with zero fill, this would get overwritten (again leaving the malloc_guard untouched)
+22:23 <@mulander> otherwise, if the requested allocation is smaller than the whole page
+22:24 <@mulander> we only junk the requested size minus the size needed for the malloc guard
+22:24 <@mulander> ah sorry
+22:25 <@mulander> if less than page size
+22:25 <@mulander> we junk the whole thing minus the malloc guard
+22:25 <@mulander> but if asked to zero memory first
+22:25 <@mulander> we would zero out up to the requested allocation and junk the actual remainder of the allocated space
+22:25 <@mulander> and if 'J' was not passed we would go to the canary handling we saw before
+22:26 <@mulander> next up http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1488
+22:26 <@mulander> orealloc
+22:28 <@mulander> first it tries to find the page in the directory
+22:28 <@mulander> *first it deefers to omalloc if called with a null pointer
+22:29 <@mulander> then tries to find the page in the directory
+22:29 <@mulander> if the page is not found, it reports a double free
+22:30 <@mulander> next a memory sanity check
+22:30 <@mulander> we obtain the allocation size of the existing memory
+22:31 <@mulander> we prepare goldsz and gnewsz for malloc_guard size accounting
+22:31 <@mulander> 1547        /* First case: from n pages sized allocation to m pages sized
+22:31 <@mulander> 1548           allocation, m > n */
+22:32 <@mulander> rounding is done using the sized that include the guard pages
+22:32 <@mulander> obtaining memory from either cache and if that fails from the kernel
+22:34 <@mulander> after we have our memory on the gotit label
+22:34 <@mulander> for 'J' we junk the newly needed region
+22:35 <@mulander> then handle canaries
+22:36 <@mulander> apparently in this case 'J' doesn't conflict with canary handling
+22:36 <@mulander> next case
+22:38 <@mulander> we effectively move the guard page down
+22:38 <@mulander> marking the old one read + write available
+22:38 <@mulander> and the new as PROT_NONE
+22:39 <@mulander> there is no junking on this path
+22:40 <@mulander> as there is no place we could junk
+22:40 <@mulander> the resize however will result in FREEJUNK from the unmap
+22:40 <@mulander> next
+22:41 <@mulander> we junk the newly required region of the page, accounting to leave the malloc guard untouched
+22:41 <@mulander> and again we handle canaries
+22:41 <@mulander> this again is only done on 'J'
+22:42 <@mulander> next
+22:43 <@mulander> the chunk didn't change but the size did, so just junk past previous needed size to the newly needed size
+22:44 <@mulander> - /* create new allocation */
+22:44 <@mulander> calls omalloc, we already went through how it adds junking
+22:44 <@mulander> error catch path
+22:44 <@mulander> so that's don for orealloc
+22:44 <@mulander> final use of SOME_JUNK
+22:47 <@mulander> after a page is aligned, with 'J' and zero fill we junk past the requested size (which is probably already 0 filled) and avaioid junking the malloc_guard
+22:47 <@mulander> if without zero fill, we junk the whole page but without touching the malloc_guard
+22:48 <@mulander> otherwise we again see the canary handling
+22:48 <@mulander> so in summary
+22:49 <@mulander> by default (junking == 1), allocations smaller than MALLOC_MAXCHUNK will be junked on alloc
+22:50 <@mulander> for junking == 2 we have no size restrictions and junking is done far more often, including reallocs and memaling
+22:51 <@mulander> the docs state
+22:51 <@mulander> 'After a delay (if not switched off by the F option), the filling pattern is validated and the process is aborted if the pattern was modified.'
+22:51 <@mulander> that appears to be true only for FREEJUNK 
+22:51 <@mulander> as we didn't see any code validating allocation junks
+22:52 < DuClare> It only makes sense for freejunk
+22:52 <@mulander> yeah it detects the memory was touched
+22:52 <@mulander> after being freed before being discarded
+22:52 < DuClare> Right.  Use-after-free.
+22:53 <@mulander> just wanted to summarize what I learned
+22:53 < DuClare> By contrast, overwriting the other junk is normal use
+22:53 < DuClare> If you want, we can go over the itsy bitsy chunk selection code, though it's not related to junking
+22:54 <@mulander> the one indexing into the bits?
+22:54 < DuClare> Yep
+22:54 <@mulander> would like that if you can drive it :)
+22:54 < DuClare> Sure thing
+22:54 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#976
+22:55 < DuClare> So, first of all there are different pages chunked at a different chunk size
+22:55 < DuClare> Minimum size is 16, so on amd64 you'd get 256 chunks in a page
+22:56 < DuClare> So find_chunksize is used to find the appropriate chunk size for the requested allocation (smallest size that is large enough)
+22:58 < DuClare> There can be multiple chunked pages, we select one of the right size randomly.  Or make a new page if we've run out
+22:58 < DuClare> Canary check we already saw
+22:58 < DuClare> Each chunk info contains an array of bits, one for each chunk, indicating whether it is free
+22:59 < DuClare> We grab an index to start from dir_info.  Notice that this is shared across all chunk allocations, so making one such allocation effectively permutes the order in which we search for a chunk the next time
+23:00 < DuClare> Then if the page contains more than one free chunk, we add a random byte-sized offset to the index to confuse things further
+23:01 < DuClare> There is obviously no point in doing that if there is only one chunk because we will find that one chunk anyway
+23:01 < DuClare> bp->total tells the total number of chunks in the page, and it's a power of two
+23:01 < DuClare> so i &= bp->total - 1 reduces i modulo bp->total, to ensure we stay within the valid range
+23:04 < DuClare> The bitfield is stored in an array so the inner loop finds the element that i indexes into in that array, and checks if any of the bits in that element are set
+23:05 < DuClare> If none are set, we need to move forward so
+23:05 < DuClare> Each array element contains MALLOC_BITS bits so by adding that quantity to i, it will index into the next element
+23:06 < DuClare> MALLOC_BITS is obviously a power of two so masking i with ~(MALLOC_BITS - 1) clears the low bits of i, meaning it will index into the first bit in the given array element
+23:07 < DuClare> This is important as we'll see that the outer loop walks through the indices sequentially
+23:09 < DuClare> Doing this, the inner loop will eventually find and break with an array element with some bits set, and unless it was the first element, i will index into the first bit
+23:09 < DuClare> There's also the obvious check that we do not run past the end of the bitfield (bp->total bits), if we do, we'll loop to the start
+23:10 < DuClare> So now we come to the outer loop, with i indexing into some element with at least one bit set, we use the modulo operator to clear the high bits of i so we can focus on the 16 bits contained within the element we've got
+23:11 < DuClare> So now we have an index k into one of these 16 bits, and we turn that into a corresponding bit mask u = 1 << k
+23:12 < DuClare> And with that, we test if the bit in the bitfield is set, and if so, break, because we found the free chunk
+23:13 < DuClare> Otherwise we increment i; it will either index into the next bit in the same element (in which case the inner loop break right away and we test that next bit, and so on)
+23:13 < DuClare> Or it will index into the first bit of the next element
+23:14 < DuClare> So this whole procedure is just a sequential search through the bit array, starting at the index we drew from the dir_info
+23:15 < DuClare> After we located the free chunk, we update the offset in dir_info to effectively permute the next small malloc
+23:16 < DuClare> Then using xor clear the bit to signify that our chunk is no longer free: *lp ^= u;
+23:16 < DuClare> That's it.
+23:17 <@mulander> thanks!
+23:17 <@mulander> --- DONE ---

@@ -1,0 +1,153 @@
+21:00 [Users #openbsd-daily]
+21:00 [@dlg           ] [ cengizIO   ] [ fyuuri       ] [ lucias    ] [ quinq    ] [ thrym        ] 
+21:00 [ __gilles      ] [ corbyhaas  ] [ g0relike     ] [ luisbg    ] [ rain1    ] [ timclassic   ] 
+21:00 [ abecker       ] [ davl       ] [ geetam       ] [ mandarg   ] [ rEv9     ] [ TronDD       ] 
+21:00 [ acgissues     ] [ Dhole      ] [ ghostyy      ] [ mattl     ] [ rgouveia_] [ turlando     ] 
+21:00 [ administ1aitor] [ dial_up    ] [ ghugha       ] [ metadave  ] [ rnelson  ] [ TuxOtaku     ] 
+21:00 [ akfaew        ] [ dmfr       ] [ Guest96088   ] [ mikeb     ] [ ryan     ] [ ule          ] 
+21:00 [ akkartik      ] [ dostoyevsky] [ harrellc10per] [ mikeputnam] [ S007     ] [ vbarros      ] 
+21:00 [ antoon_i      ] [ dsp        ] [ Harry_       ] [ mpts      ] [ SETW     ] [ viq          ] 
+21:00 [ antranigv     ] [ DuClare    ] [ horia        ] [ mulander  ] [ shazaum  ] [ vyvup        ] 
+21:00 [ apotheon      ] [ duncaen    ] [ jbernard     ] [ Naabed-_  ] [ sid77    ] [ weezelding   ] 
+21:00 [ ar            ] [ dxtr       ] [ jsing        ] [ nacci     ] [ skrzyp   ] [ whyt         ] 
+21:00 [ azend|vps     ] [ eau        ] [ jwit         ] [ nacelle   ] [ smiles`  ] [ wilornel     ] 
+21:00 [ bcd           ] [ ebag_      ] [ kAworu       ] [ nailyk    ] [ Soft     ] [ WubTheCaptain] 
+21:00 [ bch           ] [ emigrant   ] [ kittens      ] [ Niamkik   ] [ stateless] [ xor29ah      ] 
+21:00 [ biniar        ] [ entelechy  ] [ kl3          ] [ ob-sed    ] [ swankier ] [ zelest       ] 
+21:00 [ brianpc       ] [ erethon    ] [ kpcyrd       ] [ oldlaptop ] [ t_b      ] 
+21:00 [ brianritchie  ] [ fcambus    ] [ kraucrow     ] [ owa       ] [ tarug0   ] 
+21:00 [ brtln         ] [ filwisher  ] [ kysse        ] [ petrus_lt ] [ tdjones  ] 
+21:00 [ bruflu        ] [ flopper    ] [ landers2     ] [ phy1729   ] [ tdmackey_] 
+21:00 [ brynet        ] [ FRIGN      ] [ lteo[m]      ] [ qbit      ] [ Technaton] 
+21:00 -!- Irssi: #openbsd-daily: Total of 115 nicks [1 ops, 0 halfops, 0 voices, 114 normal]
+21:00 < mulander> --- code read: malloc internal canaries ---
+21:01 < mulander> *** goal: we went over all remaining malloc options yesterday
+21:01 < mulander> *** during our reads we saw internal canaries being used
+21:01 < mulander> *** let's conclude our malloc reading by learnng how that works ***
+21:02 < mulander> links:
+21:02 < mulander>  - code http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c
+21:03 < mulander>  - man https://man.openbsd.org/malloc
+21:03 < mulander>  - man https://man.openbsd.org/malloc.conf.5
+21:04 < mulander> ok let's start by going through defined structures
+21:04 < mulander> we saw various struct members like canary, canary1 and canary2 used over the code
+21:06 < mulander> I spot the first one on the dir_info struct on line 113
+21:06 < mulander> should mention, code we are reading is versioned as: /*  $OpenBSD: malloc.c,v 1.226 2017/06/19 03:06:26 dlg Exp $    */
+21:06 < mulander> the canary is defined as
+21:06 < mulander> u_int32_t canary1;
+21:07 < mulander> and is not documented in the strct itself
+21:08 < mulander> there is a second one, at the end of the same struct
+21:08 < mulander> u_int32_t canary2;
+21:10 < mulander> next up we find a canary in chunk_info as u_int32_t canary
+21:10 < mulander> and one in mopts defined as:
+21:10 < mulander> u_int32_t malloc_canary;    /* Matched against ones in malloc_pool */
+21:11 < mulander> that last one being on options is interesting and we will dive into the code starting with it.
+21:11 < mulander> I'm first searching for a spot where this specific option is set
+21:12 < mulander> this happens in omalloc_init
+21:12 < mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#636
+21:12 < mulander> 636    while ((mopts.malloc_canary = arc4random()) == 0)
+21:12 < mulander> 637        ;
+21:12 < mulander> we can see the canary is set to a randomly generated value
+21:13 < mulander> and from the comment we infer that it's the value used for veryfing other internal canaries
+21:14 < mulander> on chunk_inf and dir_info
+21:14 < mulander> having that context I'm going to follow the canary occurrences
+21:14 < mulander> first hits are in map
+21:14 < mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#428
+21:15 < mulander> on ine 435 we have a check
+21:16 < mulander> which cecks if canary1 xor'ed with the address of the dir_info struct pointer matches the generated canary vvalue on mopts.malloc_canary
+21:17 < mulander> and it also makes sure that canary2 is the bit negated value of canary1
+21:18 < mulander> if either of those don't hold, we bail out with an error
+21:19 < mulander> that's a nice relation, that checks both values against the stored secret but only has us xoring once
+21:19 < mulander> next hit is the init code setting the secret
+21:19 < mulander> going on we hit omalloc_poolinit
+21:19 < mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#644
+21:20 < mulander> 640/*
+21:20 < mulander> 641 * Initialize a dir_info, which should have been cleared by caller
+21:20 < mulander> 642 */
+21:20 < mulander> 651    /*
+21:20 < mulander> 652     * Allocate dir_info with a guard page on either side. Also
+21:20 < mulander> 653     * randomise offset inside the page at which the dir_info
+21:20 < mulander> 654     * lies (subject to alignment by 1 << MALLOC_MINSHIFT)
+21:20 < mulander> 655     */
+21:20 < mulander> we didn't read this code before
+21:20 < mulander> we can see the memory being grabbed from the kernel
+21:20 < mulander> then both mentioned malloc guard pages wet by calling mprotect PROT_NONE
+21:20 < mulander> then we have the mentioned shift in memory
+21:21 < mulander> 662    d = (struct dir_info *)((char *)p + MALLOC_PAGESIZE +
+21:21 < mulander> 663        (arc4random_uniform(d_avail) << MALLOC_MINSHIFT));
+21:21 < mulander> which is nice, I didn't knew the internal structure is shifted itself to further increase the work an atacker would have to do
+21:21 < mulander> at the end L679 and 680 we see both mallocs being set
+21:22 < mulander> 679    d->canary1 = mopts.malloc_canary ^ (u_int32_t)(uintptr_t)d;
+21:22 < mulander> 680    d->canary2 = ~d->canary1;
+21:22 < mulander> canary1 being the generated secret xored with the memory address of our structure (that we now know is also randomized)
+21:22 < mulander> and canary2 set to a bit negated vvalue of canary1
+21:22 < mulander> moving on
+21:22 < mulander> we have alloc_chunk_info
+21:23 < mulander> http://bxr.su/s?refs=alloc_chunk_info&project=OpenBSD
+21:23 < mulander> we saw this code before
+21:23 < mulander> on line 765 we see the dir info canary1 being copied to chunk_info canary
+21:23 < mulander> no magic here
+21:24 < mulander> next we hit find
+21:24 < mulander> http://bxr.su/s?refs=find&project=OpenBSD
+21:24 < mulander> we see the exact ame canary 1 + canary2 check on dir info
+21:24 < mulander> *same
+21:25 < mulander> next up malloc_bytes
+21:25 < mulander> http://bxr.su/s?refs=malloc_bytes&project=OpenBSD
+21:25 < mulander> same thing, on line 959 we have the dir info check
+21:25 < mulander> but additionally on line 973 we have the chunk canary being checked
+21:25 < mulander> 973    if (bp->canary != d->canary1)
+21:25 < mulander> 974        wrterror(d, "chunk info corrupted");
+21:26 < mulander> at this point canary1 was already validated against the stored secret and memory address of dir info
+21:27 < mulander> and we know that canary one was copied to chunk canary
+21:28 < mulander> I'm jumping back to alloc_chunk_info
+21:28 < mulander> interested to know if it was validated here, before being copied to chunk_info
+21:29 < mulander> and yes, indirectly it was
+21:29 < mulander> as alloc_chunk_info is called by omalloc_make_chunks
+21:29 < mulander> and that in turn is called from malloc_bytes
+21:29 < mulander> which at the very start validates the canary
+21:30 < mulander> next hit is seen in find_chunknum
+21:31 < mulander> it verifies that the chunk_info canary still holds against the dir info
+21:31 < mulander> 1066    if (info->canary != d->canary1)
+21:31 < mulander> 1067        wrterror(d, "chunk info corrupted");
+21:32 < mulander> next hit in _malloc_init
+21:32 < mulander> if a malloc_canary is not set, we call malloc_init
+21:32 < mulander> *omalloc_init
+21:33 < mulander> and that's the whole canary handling
+21:34 < mulander> if the memory holding dir_info gets overwritten at the beginning or it's end - the canaries will report the internal structure being modified
+21:34 < mulander> in case of chunk pages we detect the begining of the structure being modified
+21:34 < mulander> overwriting options accidentally and changing the mopts.malloc_canary generated value would also result in the code reporting a mismatch
+21:35 < mulander> worth to note
+21:35 < mulander> that in the stack clash PoC we saw
+21:35 < mulander> https://www.qualys.com/2017/06/19/stack-clash/stack-clash.txt
+21:35 < mulander> at(78717) in free(): error: chunk info corrupted
+21:35 < mulander> from their first attempt
+21:35 < mulander> this matches errors from:
+21:35 < mulander>  - malloc_bytes
+21:35 < mulander> 973    if (bp->canary != d->canary1)
+21:35 < mulander> 974        wrterror(d, "chunk info corrupted");
+21:35 < mulander> and find_chunknum
+21:36 < mulander> 1066    if (info->canary != d->canary1)
+21:36 < mulander> 1067        wrterror(d, "chunk info corrupted");
+21:36 < mulander> the second error
+21:36 < DuClare> You can't overwrite options
+21:36 < DuClare> It'll be mprotect ro after init
+21:36 < mulander> ah right
+21:36 < mulander> in _malloc_init
+21:37 -!- Irssi: Pasting 5 lines to #openbsd-daily. Press Ctrl-K if you wish to do this or Ctrl-C to cancel.
+21:37 < mulander> 1245    /*
+21:37 < mulander> 1246     * Options have been set and will never be reset.
+21:37 < mulander> 1247     * Prevent further tampering with them.
+21:37 < mulander> 1248     */
+21:37 < mulander> 1249    if (((uintptr_t)&malloc_readonly & MALLOC_PAGEMASK) == 0)
+21:37 < mulander> 1250        mprotect(&malloc_readonly, sizeof(malloc_readonly), PROT_READ);
+21:37 < mulander> thanks for pointing out DuClare 
+21:38 < mulander> there is a second error frm that linked paper
+21:38 < mulander> at(14184) in free(): error: modified chunk-pointer 0xcd6d0120
+21:38 < mulander> it's no from the internal canaries but we have a bit of time so let's see where it's from
+21:38 < mulander> also from find_chunknum
+21:38 < mulander> 1076    if ((uintptr_t)ptr & ((1U << (info->shift)) - 1))
+21:38 < mulander> 1077        wrterror(d, "modified chunk-pointer %p", ptr);
+21:40 < mulander>  u_short shift;          /* how far to shift for this size */
+21:40 < mulander> so this checks if after shifting we land at the expected memory location
+21:41 < mulander> if not, then the pointer was overwritten and is pointing at a different memory location
+21:42 < mulander> guess that covers malloc on the level I wanted to dive in (for now)
+21:42 < mulander> --- DONE ---

@@ -1,0 +1,193 @@
+21:01 [Users #openbsd-daily]
+21:01 [@__gilles[away]] [ brtln      ] [ fcbsd        ] [ kysse     ] [ poptart_ ] [ tdmackey     ] 
+21:01 [@akfaew        ] [ bruflu     ] [ filwishe1    ] [ landers2  ] [ qbit     ] [ Technaton    ] 
+21:01 [@dlg           ] [ brynet     ] [ floppo       ] [ lk23789k23] [ quinq    ] [ thrym        ] 
+21:01 [@fcambus       ] [ cengizIO   ] [ g0relike     ] [ lteo[m]   ] [ rabbitear] [ timclassic   ] 
+21:01 [@mikeb         ] [ corbyhaas  ] [ geetam       ] [ lucias    ] [ rain1    ] [ TronDD       ] 
+21:01 [@mulander      ] [ davl       ] [ ggg_         ] [ luisbg    ] [ rajak    ] [ turlando     ] 
+21:01 [@t_b           ] [ deei       ] [ ggg``        ] [ mandarg   ] [ rEv9     ] [ TuxOtaku     ] 
+21:01 [ administraitor] [ Dhole      ] [ ghostyy      ] [ mattl     ] [ rgouveia ] [ Vaelatern    ] 
+21:01 [ akkartik      ] [ dmfr       ] [ ghugha       ] [ metadave  ] [ rnelson  ] [ vbarros      ] 
+21:01 [ antoon_i      ] [ dostoyesvky] [ harrellc00per] [ mikeputnam] [ ryan     ] [ viq          ] 
+21:01 [ antranigv     ] [ Dowzee     ] [ Harry        ] [ mpts      ] [ S007     ] [ vyvup        ] 
+21:01 [ apotheon      ] [ DrPete     ] [ IcePic       ] [ Naabed-   ] [ sgnorptz ] [ weezelding   ] 
+21:01 [ ar            ] [ dsp_       ] [ in0rdr_      ] [ nacci     ] [ skrzyp   ] [ whyt         ] 
+21:01 [ asie          ] [ DuClare    ] [ jbernard     ] [ nacelle   ] [ smiles`  ] [ wilornel     ] 
+21:01 [ azend|vps     ] [ duncaen    ] [ jonbryan     ] [ nailyk    ] [ Soft     ] [ wodim        ] 
+21:01 [ bcd           ] [ dxtr       ] [ jsing        ] [ Niamkik   ] [ stateless] [ WubTheCaptain] 
+21:01 [ bch           ] [ eau        ] [ kAworu       ] [ noexcept_ ] [ stsp     ] [ xor29ah      ] 
+21:01 [ benpicco      ] [ ebag       ] [ kittens      ] [ oldlaptop ] [ sunil    ] [ zelest       ] 
+21:01 [ biniar        ] [ emigrant   ] [ kl3          ] [ owa       ] [ swankier ] 
+21:01 [ brianpc       ] [ entelechy  ] [ kpcyrd       ] [ petrus_lt ] [ tarug0   ] 
+21:01 [ brianritchie  ] [ erethon1   ] [ kraucrow     ] [ phy1729   ] [ tdjones  ] 
+21:01 -!- Irssi: #openbsd-daily: Total of 123 nicks [7 ops, 0 halfops, 0 voices, 116 normal]
+21:01 <@mulander> --- code read: otto malloc J option ---
+21:01 <@mulander> *** let's see how junking works ***
+21:02 <@mulander> for anyone who jumped in recently:
+21:02 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c - the code we will be reading
+21:02 <@mulander> http://man.openbsd.org/malloc - docs
+21:02 <@mulander> http://man.openbsd.org/malloc.conf.5 - more docs
+21:03 <@mulander> malloc.conf informs us that there are 2 junking options
+21:03 <@mulander> J and j
+21:03 <@mulander>  
+21:03 <@mulander>  
+21:03 <@mulander> J
+21:03 <@mulander> "More junking". Increase the junk level by one if it is smaller than 2.
+21:03 <@mulander> j "Less junking". Decrease the junk level by one if it is larger than 0. Junking writes some junk bytes into the area allocated. Currently junk is bytes of 0xdb when allocating; freed chunks are filled with 0xdf. By default the junk level is 1: small chunks are always junked and the first part of pages is junked after free. After a delay (if not switched off by the F option), the filling pattern 
+21:03 <@mulander> is validated and the process is aborted if the pattern was modified. If the junk level is zero, no junking is performed. For junk level 2, junking is done without size restrictions.
+21:04 <@mulander> after reading this I assume 'some' junking is always happening
+21:04 < DuClare> We saw the default options last time:         mopts.malloc_junk = 1;
+21:05 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#540 shows that the maximum junkins is 2
+21:05 <@mulander> and minimum is 0
+21:06 <@mulander> the initial default is of course set in omalloc_init
+21:06 <@mulander> let's follow malloc_junk usage
+21:06 <@mulander> from the top
+21:07 <@mulander> first hit comes from unmap
+21:08 <@mulander> so this function works with the malloc cache, and determines if the page needs to be given back to the kernel
+21:08 <@mulander> it's not exposed externally
+21:09 <@mulander> first if a page is larger than our defined cache we will just give the page back to the OS
+21:09 <@mulander> as no pint filling the whole cache with a single mapping
+21:12 <@mulander> then as long we have pages to unmap and still not went through available cache
+21:12 <@mulander> we free the region, and decrease our cache
+21:12 <@mulander> if caching failed, the page is also released to the OS
+21:13 <@mulander> if after going through all available cache slots we still have memory to unmap
+21:14 <@mulander> and we still have available cache we again attempt to move the freed memory to the cache
+21:15 <@mulander> if this fails, we zero out the memory if a clear flag is defined, then finally hit our junking option
+21:15 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#387
+21:15 <@mulander> that second option is 'F'
+21:15 <@mulander> so if we defined J and didn't define F (or defined f)
+21:17 <@mulander> if I'm reading this correctly, there's an upper limit to how much of the page will be junked
+21:17 <@mulander> defined as MALLOC_MAXCHUNK
+21:17 <@mulander> which si a (1 << MALLOC_MAXSHIFT)
+21:17 <@mulander> which is a MALLOC_PAGESHIFT -1
+21:17 <@mulander> which is a PAGE_SHIFT
+21:18 <@mulander> which is a 14U
+21:20 <@mulander> so that's 8192 bytes
+21:21 <@mulander> (would appreciate a double check ^)
+21:21 < DuClare> Yep
+21:21 < DuClare> So maxchunk is half that
+21:23 < DuClare> Sorry, right, you already accounted for that
+21:24 <@mulander> still not sure I didn't get lost :D
+21:25 < DuClare> page_shift is platform specific actually
+21:25 <@mulander> I only have amd64, so will just check on that
+21:25 <@mulander> small test program
+21:26 < DuClare> /usr/include/amd64/param.h:#define      PAGE_SHIFT      12
+21:26 <@mulander> #define PAGESHIFT (14U)
+21:26 <@mulander> #define MAXSHIFT (PAGESHIFT - 1)
+21:26 <@mulander> #define MAXCHUNK (1 << MAXSHIFT)
+21:26 <@mulander> #include <stdio.h>
+21:26 <@mulander> int
+21:26 <@mulander> main(int argc, char **argv)
+21:26 <@mulander> {
+21:26 <@mulander> 	printf("%zu\n", MAXCHUNK);
+21:26 <@mulander> 	return 0;
+21:26 <@mulander> }
+21:26 <@mulander> right
+21:26 < dxtr> PAGESHIFT vs PAGE_SHIFT
+21:26 < DuClare> The 14U is for the __mips64__ branch
+21:26 <@mulander> I made a mistake
+21:26 <@mulander> didn't notice the defined for mips
+21:26 <@mulander> yep
+21:26 < dxtr> what's the difference?
+21:26 < DuClare> dxtr: #define MALLOC_PAGESHIFT        (PAGE_SHIFT)
+21:27 < DuClare> /usr/include/amd64/param.h:#define      PAGE_SHIFT      12
+21:27 < dxtr> But mulander just showed a #define PAGESHIFT too
+21:27 <@mulander> dxtr: that was my test program
+21:27 < dxtr> So many shifts here
+21:27 < dxtr> Oh, alright
+21:27 < DuClare> That was a mistake dxtr
+21:27 <@mulander> yep
+21:27 <@mulander> I read over the ifdef
+21:27 < DuClare> I did too, initiall.  :)
+21:29 <@mulander> ok, so up to 2048 bytes on amd64
+21:30 <@mulander> now back to the code
+21:30 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#390
+21:30 <@mulander> we memset the memory up to the calculated max chunk which now we know is platform dependant
+21:30 <@mulander> with SOME_FREEJUNK
+21:30 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#SOME_FREEJUNK
+21:30 <@mulander> which is 0xdf documented as /* dead, free */
+21:31 <@mulander> there is also a define SOME_JUNK with 0xdb
+21:31 <@mulander> documented as deadbeef :)
+21:31 <@mulander> and a helpful comment for both
+21:31 <@mulander> 85/*
+21:31 <@mulander> 86 * What to use for Junk.  This is the byte value we use to fill with
+21:31 <@mulander> 87 * when the 'J' option is enabled. Use SOME_JUNK right after alloc,
+21:31 <@mulander> 88 * and SOME_FREEJUNK right before free.
+21:31 <@mulander> 89 */
+21:33 <@mulander> so the decision here makes it easy when looking at memory hex dumps
+21:33 <@mulander> to see if a part of memory was marked by the allocation or the free
+21:33 <@mulander> we also recall from the document that malloc itself tests for those patterns
+21:34 <@mulander> we started off with a place using SOME_FREEJUNK
+21:34 <@mulander> so let's follow that symbol first
+21:35 <@mulander> next uses show up in map
+21:36 <@mulander> this code is also likely used for cache handling
+21:36 <@mulander> and is obtaining memory from the cache
+21:36 <@mulander> we see 2 references to our symbol here
+21:37 <@mulander> first thing, there's no limit on the junking done
+21:37 <@mulander> secondly the options are only triggered when malloc junking is set to 2 (the J option)
+21:40 <@mulander> the first path also happens only when freeunmap is set
+21:40 <@mulander> actualy both use cases
+21:41 <@mulander> I'm having a hard time to grok it by just glossing over, so will go from the top
+21:41 <@mulander> we start with a check for the canary
+21:42 <@mulander> then if we didn't get a hint, nd the page shift size is larger than our free regions size
+21:42 <@mulander> we grab new memory from the kernel
+21:42 <@mulander> and record some stats
+21:42 <@mulander> exiting execution
+21:42 <@mulander> otherwise, we go over each malloc cache entry we have
+21:43 <@mulander> and try to obtain a fitting region from there
+21:45 <@mulander> if we find a proper page
+21:45 <@mulander> and we didn't have a hint and the size matches the page shift size
+21:46 <@mulander> we use that page and depending on the malloc options
+21:47 <@mulander> 1. map it READ|WRITE for malloc 'F' option
+21:48 <@mulander> 2.1 fill it with zero if zero_fill was passed
+21:48 <@mulander> 2.2 fill it with junk if 'J' and 'F' malloc options were used
+21:49 <@mulander> so the purpose for this here if I am reading this correctly
+21:49 <@mulander> is to junk cache pages before they are given to the user
+21:49 <@mulander> as we saw before umap only junked pages it was about to give back to the OS
+21:50 <@mulander> so pages going back to cache are not junked on the default junking level
+21:50 <@mulander> and with J when a program happens to get a cached page it will get additionally junked
+21:51 <@mulander> and if the requested allocation is larger than the page size
+21:51 <@mulander> it's considered big and we proceed to the second if
+21:52 < DuClare> Hold on
+21:52 <@mulander> yes?
+21:52 < DuClare> unmap junks pages that go to the cache
+21:53 < DuClare> There is no point junking pages that are handed off to the OS
+21:54 <@mulander> ah, I miss identified the branches? /me checks backlog
+21:55 <@mulander> you are right
+21:55 <@mulander> so this just rejunks the page, but has is indeed more junking as it's not restricted by MALLOC_MAXCHUNK
+21:59 <@mulander> so I'm trying to wrap my head around what big != NULL branch does
+21:59 <@mulander> more exactly
+21:59 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#476
+22:01 < DuClare> So there's a cached region bigger than what we're looking to map
+22:01 <@mulander> so it splits it?
+22:01 <@mulander> by offseting into it
+22:01 <@mulander> ?
+22:02 < DuClare> Right, so big = r points to the region info which tracks its address and size
+22:02 < DuClare> So by incrementing the pointer and reducing the size, we effectively take away the start of the region
+22:03 < DuClare> So p, which we'll return, points at what was the start of the region, and then the region info is updated to point past the mapping reserved for p.
+22:05 <@mulander> neat
+22:05 <@mulander> ok, next occurrence is validate_junk
+22:06 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1286
+22:06 <@mulander> this has just a single call site in ofree
+22:06 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1402
+22:07 <@mulander> the function just goes over the memory to be freed and checks it byte by byte if it matches SOME_FREEJUNK
+22:07 <@mulander> let's go through ofree, to see when that happens
+22:08 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1306
+22:08 <@mulander> first a bailout for attempting to free a memory we don't have in our region info
+22:09 <@mulander> if check is passed
+22:10 <@mulander> we have branches for validating canaries and a malloc guard
+22:10 <@mulander> next if the size is larger than MALLOC_MAXCHUNK
+22:11 <@mulander> we do some checks but generally unmap
+22:11 <@mulander> otherwise if the freed page is fitting in the MALLOC_MAXCHUNK size
+22:12 <@mulander> we do a check for canaries/deleayed free
+22:12 <@mulander> then if the memory was not asked to be cleared, and 'F' was not defined and junking is defined
+22:12 <@mulander> we junk the memory and we already know it's not past MALLOC_MAXCHUNK size
+22:13 <@mulander> followed by delayed free handling
+22:13 <@mulander> in the other branch we either clear the memory as demanded or fill it with junk
+22:14 <@mulander> in the first branch, past delayed free handling we have the junk validation being executed
+22:17 <@mulander> think that covers the free junk handling
+22:17 <@mulander> did I miss something important?
+22:17 <@mulander> if not, let's wrap up and do the allocation junking tomorrow
+22:18 < DuClare> I was a little distracted but didn't notice any big omissions
+22:18 <@mulander> so it's a wrap, thanks everyone for attending!
+22:18 <@mulander> --- DONE ---

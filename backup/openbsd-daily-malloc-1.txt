@@ -1,0 +1,238 @@
+20:49 [Users #openbsd-daily]
+20:49 [@__gilles[away]] [ brianpc     ] [ entelechy    ] [ kpcyrd    ] [ petrus_lt] [ tdjones      ] 
+20:49 [@akfaew        ] [ brianritchie] [ erethon1     ] [ kraucrow  ] [ phy1729  ] [ tdmackey     ] 
+20:49 [@dlg           ] [ brtln       ] [ fcbsd        ] [ kysse     ] [ poptart_ ] [ Technaton    ] 
+20:49 [@fcambus       ] [ bruflu      ] [ filwishe1    ] [ landers2  ] [ qbit     ] [ thrym        ] 
+20:49 [@mikeb         ] [ brynet      ] [ flopper      ] [ lk23789k23] [ quinq    ] [ timclassic   ] 
+20:49 [@mulander      ] [ cengizIO    ] [ g0relike     ] [ lteo[m]   ] [ rabbitear] [ TronDD       ] 
+20:49 [@t_b           ] [ corbyhaas   ] [ geetam       ] [ lucias    ] [ rain1    ] [ TuxOtaku     ] 
+20:49 [ acgissues     ] [ davl        ] [ ggg_         ] [ luisbg    ] [ rajak    ] [ Vaelatern    ] 
+20:49 [ administraitor] [ deei        ] [ ggg``        ] [ mandarg   ] [ rEv9     ] [ vbarros      ] 
+20:49 [ akkartik      ] [ Dhole       ] [ ghostyy      ] [ mattl     ] [ rgouveia ] [ viq          ] 
+20:49 [ antoon_i      ] [ dmfr        ] [ ghugha       ] [ metadave  ] [ rnelson  ] [ vyvup        ] 
+20:49 [ antranigv     ] [ dostoyesvky ] [ Guest13073   ] [ mikeputnam] [ S007     ] [ weezelding   ] 
+20:49 [ apotheon      ] [ Dowzee      ] [ harrellc00per] [ mpts      ] [ sgnorptz ] [ Wilawar      ] 
+20:49 [ ar            ] [ DrPete      ] [ Harry        ] [ Naabed-   ] [ skrzyp   ] [ wilornel     ] 
+20:49 [ asie          ] [ dsp_        ] [ IcePic       ] [ nacci     ] [ smiles`  ] [ wodim        ] 
+20:49 [ azend|vps     ] [ DuClare     ] [ jbernard     ] [ nacelle   ] [ Soft     ] [ WubTheCaptain] 
+20:49 [ babasik122    ] [ duncaen     ] [ jonbryan     ] [ nailyk    ] [ stateless] [ xor29ah      ] 
+20:49 [ bcd           ] [ dxtr        ] [ jsing        ] [ Niamkik   ] [ stsp     ] [ zelest       ] 
+20:49 [ bch           ] [ eau         ] [ kAworu       ] [ noexcept_ ] [ sunil    ] 
+20:49 [ benpicco      ] [ ebag        ] [ kittens      ] [ oldlaptop ] [ swankier ] 
+20:49 [ biniar        ] [ emigrant    ] [ kl3          ] [ owa       ] [ tarug0   ] 
+20:49 -!- Irssi: #openbsd-daily: Total of 123 nicks [7 ops, 0 halfops, 0 voices, 116 normal]
+20:49 <@mulander> --- code read: otto malloc ---
+20:49 <@mulander> *** read how malloc is implemented on OpenBSD ***
+20:49 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c
+20:50 <@mulander> http://man.openbsd.org/malloc - manual
+20:52 < DuClare> Also http://www.drijf.net/malloc/
+20:54 <@mulander> reading first the document linked by DuClare 
+20:55 <@mulander> which links to a nice presentation https://www.openbsd.org/papers/eurobsdcon2009/otto-malloc.pdf
+20:56 <@mulander> quickly going over the slides, will copy things that stood out to me
+20:56 <@mulander> Kernel knows two ways of giving memory to an application:
+20:56 <@mulander> sbrk(2) and mmap(2)
+20:57 <@mulander> http://man.openbsd.org/sbrk
+20:57 <@mulander> The brk() and sbrk() functions are historical curiosities left over from earlier days before the advent of virtual memory management.
+20:58 <@mulander> http://man.openbsd.org/mmap.2
+20:59 <@mulander> and the virtual memory system for OpenBSD is documented at http://man.openbsd.org/uvm.9
+21:02 <@mulander> originally malloc implementations were predictable, memory was rarely cleared/randomizd, frequently reused
+21:02 <@mulander> *randomized
+21:03 <@mulander> the OpenBSD malloc makes sure to return pages at random locations (instead of grabbing a sequence of memory from the kernel, slicing it into chunks and giving out consecutive chunks on each call)
+21:04 <@mulander> it works on non-contiguous ranges of pages which means that overruning an allocated buffer will more likely result in a crash instead of hitting a second allocated page of memory
+21:06 <@mulander> design goals from the pdf: simple, unpredictable, fast, less metadata space overhead, robust (eg. double frees being detected)
+21:07 <@mulander> the doc now goes into some implementation details (they might or might not be outdated but worth to go over it)
+21:07 <@mulander> there's apparently a hash table used that tracks mmap'ed regions using their addresses as keys
+21:07 <@mulander> the existing data structure for chunk allocations probably refers to the page dir? not sure at this point
+21:08 <@mulander> there's also a cache for free regions
+21:08 <@mulander> slide 13 presents a nice graph
+21:08 <@mulander> for the metadata
+21:09 <@mulander> slide 14, we see a struct for region_info and a hashing function
+21:10 <@mulander> the backing hash table is grown if it crosses the 75% capacity water mark
+21:11 <@mulander> the cache, freed regions are kept for potential reuse, large regions are unmapped directly.
+21:11 <@mulander> if the number of cached pages grows they can get unmapped
+21:11 <@mulander> the search for a cached region is randomized
+21:12 <@mulander> optionally pages are marked PROT_NONE
+21:12 <@mulander> which means the pages can't be: executed, read or written to.
+21:14 < DuClare> And that's great for catching use-after-free bugs.
+21:14 < DuClare> You can enable this with malloc options
+21:15 <@mulander> would that also catch double free?
+21:15 < DuClare> Yea
+21:16 < DuClare> Well the optional option, F
+21:16 < DuClare> It turns off delayed freeing
+21:16 < DuClare> So that makes it easier to catch double frees
+21:16 < DuClare> I don't think the mprotect plays a role
+21:16 <@mulander> The free() function causes the space pointed to by ptr to be either placed on a list of free blocks to make it available for future allocation or, when appropriate, to be returned to the kernel using munmap(2). If ptr is NULL, no action occurs. If ptr was previously freed by free() or a reallocation function, the behavior is undefined and the double free is a security concern.
+21:17 <@mulander> I actually wonder if free alters the pointer in some way or keeps it at the same memory spot
+21:17 < DuClare> What pointer?  It can't modify the pointer you pass to it
+21:17 < DuClare> C arguments are always passed by value
+21:18 < DuClare> But a free would cause the pointer to be erased from the hash table mentioned earlier
+21:19 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#1331
+21:20 < DuClare> Right.  That's what happens when the pointer isn't found in the hash table.
+21:22 <@mulander> going on with the dog
+21:22 <@mulander> realloc attempts to avoid mmap'ing more memory from the kernel by checking if the required pages are already existing
+21:24 <@mulander> the dir_info hash is mmap'ed with PROT_READ (read only) and there's an option to do the same for the page directory
+21:24 <@mulander> dir_info and chunk_info is also protected by canaries
+21:25 <@mulander> and we learn this malloc first appeared in 4.4
+21:25 <@mulander> that's it for the pdf
+21:26 <@mulander> doing a quick scan thorugh the site itself
+21:27 <@mulander> we learn that malloc can grab instrumentation data if built with MALLOC_STATS defined
+21:27 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#26 not compiled in by default
+21:28 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#106 with that option malloc additionally tracks the source of the allocation
+21:28 < DuClare> Remember this was introduced in a time before the valgrind port for OpenBSD (I still don't know how well it works, never tried it?)
+21:29 < DuClare> So that's one way to look out for and track memory leaks.
+21:29 <@mulander> I'm currently iterating over defines for MALLOC_STATS
+21:30 <@mulander> to see what code gets compiled in
+21:30 <@mulander> not going into details yet, just looking to get a feel for it
+21:32 <@mulander> the largest chunk indeed is for leak tracking
+21:33 <@mulander> so that could be a nice feature oriented read (how the tracking works)
+21:34 <@mulander> so the document shows us actually how the feature is used
+21:35 <@mulander> we have a leaky x.c program
+21:36 <@mulander> that allocates 10240 bytes 3 times, then calls free just on the last alloction and finally allocates 1000 bytes again
+21:40 <@mulander> there's a way to grab the instrumentation data via gdb
+21:40 <@mulander> even if the program itself is not running with malloc opts that allow grabbing this data
+21:40 <@mulander> so I assume the option only causes a dump, and those stats are always grabbed if malloc is compiled with MALLOC_STATS
+21:42 < DuClare> Right
+21:42 <@mulander> and it also shows how to go from the stored f address to a line of code in gdb
+21:44 <@mulander> malloc options are documented in malloc.conf(5) http://man.openbsd.org/malloc.conf.5
+21:45 <@mulander> this already will be a multi day read, so let's do some initial planning
+21:45 <@mulander> for now, let's go over the available malloc options and set a goal to learn what is the default and how the options are read/parsed
+21:45 <@mulander> including the implementation details
+21:46 <@mulander> (as the symbolic link in examples seems interesting)
+21:46 < DuClare> It's a fun trick
+21:46 <@mulander> and the initial goal for tomorrow will be going over the stats code
+21:47 <@mulander> ok so from malloc.conf we learn
+21:47 <@mulander> Upon the first call to the malloc(3) family of functions, an initialization sequence inspects the symbolic link /etc/malloc.conf, next checks the environment for a variable called MALLOC_OPTIONS, and finally looks at the global variable malloc_options in the program. Each is scanned for the following flags. Flags are single letters. Unless otherwise noted uppercase means on, lowercase means off.
+21:47 <@mulander> I assume 'first call' is per program
+21:49 <@mulander> I checked on my boxes and none have malloc.conf by default
+21:50 <@mulander> obviously none also define MALLOC_OPTIONS
+21:50 <@mulander> as for the flag itself
+21:50 <@mulander> the man page goes over them pretty clearly, so no point of me copy pasting info here
+21:51 <@mulander> one interesting bit so far
+21:51 <@mulander> on 'D' - "Dump". malloc(3) will dump statistics to the file ./malloc.out, if it already exists, at exit.
+21:51 <@mulander> worth to check how it the code behaves when the file is present or not
+21:51 <@mulander> the doc makes me think it will never dump unless the file is pre-created
+21:52 <@mulander> F is the freeguard DuClare mentioned for delayed frees
+21:52 < DuClare> You're right, it won't dump unless the file is there
+21:52 < DuClare> It will warn you about that on stderr.
+21:52 <@mulander> regarding our previous discussion
+21:52 <@mulander> looks like PROT_* does detect double free and the code suggests that with using U
+21:52 <@mulander> with F - This option is intended for debugging rather than improved security (use the U option for security).
+21:53 <@mulander> on U
+21:53 <@mulander> "Free unmap". Enable use after free protection for larger allocations. Unused pages on the freelist are read and write protected to cause a segmentation fault upon access.
+21:53 < DuClare> Use after free isn't quite the same as double free
+21:53 <@mulander> ah upon access, you are correct
+21:53 < DuClare> But I think double frees of these pages may still be captured
+21:54 <@mulander> something we might investigate later I guess :)
+21:54 < DuClare> Yes, I can't remember how it works.   But I assume they would be removed from the hash table.
+21:54 < DuClare> And re-inserted if they once they are put back to use.
+21:55 <@mulander> X is also interesting, mostly because it shows up with an example on how to compile in malloc options to binaries
+21:55 <@mulander> which makes me wonder what happens if a program does runtime modifications to that structure
+21:56 <@mulander> I assume it's never touched past first malloc
+21:56 < DuClare> Yeah it's useless to modify it after the fact
+21:56 <@mulander> it would be a vulnerability vector if it had impact
+21:57 <@mulander> there are also two options for controlling the cache size
+21:57 <@mulander> we also learn that the default page cahce is 64
+21:57 <@mulander> wonder if that is still true
+21:57 < DuClare> Yep
+21:57 <@mulander> #define MALLOC_DEFAULT_CACHE    64
+21:57 <@mulander> yep
+21:58 <@mulander> and the example
+21:58 <@mulander> # ln -s 'G<<' /etc/malloc.conf
+21:58 <@mulander> creates a root owned symbolic link from the string? 'G<<' to a file named /etc/malloc.conf
+21:59 <@mulander> I assume that still need to be a valid file name
+21:59 < DuClare> 'G<<' need not be a valid name
+21:59 <@mulander> and I predict that it follows the symlink to find the linked to 'filename'
+22:00 <@mulander> and treat that as options
+22:00 < DuClare> I mean yes, of course it's a valid name.  Anything goes except nul or /
+22:00 <@mulander> yeah that's what I meant
+22:00 < DuClare> But it obviously need not point to any existing file.  :)
+22:00 <@mulander> as in doesn't have to exist :)
+22:00 <@mulander> yep
+22:01 <@mulander> ok, let's look at some code
+22:01 <@mulander> Upon the first call to the malloc(3) family of functions, an initialization sequence inspects the symbolic link /etc/malloc.conf
+22:01 <@mulander> this is mentioned as the first thing the code does
+22:01 <@mulander> so let's search for /etc/malloc.conf
+22:02 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#590
+22:02 <@mulander> we are in omalloc_init
+22:02 <@mulander> we can see cache being set to 64
+22:02 <@mulander> and an option junk set to 1
+22:02 <@mulander> junk is:
+22:02 <@mulander> "More junking". Increase the junk level by one if it is smaller than 2.
+22:02 <@mulander> Junking writes some junk bytes into the area allocated. Currently junk is bytes of 0xdb when allocating; freed chunks are filled with 0xdf. By default the junk level is 1: small chunks are always junked and the first part of pages is junked after free. After a delay (if not switched off by the F option), the filling pattern is validated and the process is aborted if the pattern was modified. If 
+22:02 <@mulander> the junk level is zero, no junking is performed. For junk level 2, junking is done without size restrictions.
+22:04 <@mulander> now we have a chunk of code executed up to 3 times
+22:04 <@mulander> interesting pattern I never saw before
+22:04 <@mulander> the loop switches on the value picking a patch
+22:05 <@mulander> on the first try we call readlink on /etc/malloc.conf
+22:05 <@mulander> http://man.openbsd.org/readlink
+22:05 <@mulander> *wrong
+22:05 <@mulander> http://man.openbsd.org/readlink.2
+22:06 <@mulander> so this follows the symlink placing the name of our 'fake' options file
+22:06 <@mulander> in the buffer b
+22:08 <@mulander> second path is only allowed if we are running elevated
+22:09 <@mulander> the code then reads the MALLOC_OPTIONS environment variables
+22:09 <@mulander> *variable
+22:10 < DuClare> Clarification, it's the environment variable is only respected if we are *not* setuid/setgid
+22:10 <@mulander> DuClare: am I reading this correctly that this is only true if the executable was called with doas, has suid bit or was called by root?
+22:11 <@mulander> ah
+22:11 <@mulander> issetugid returns 1 if the process was suid
+22:11 <@mulander> right, thanks for catching
+22:12 <@mulander> DuClare: any ideas why that restriction?
+22:13 < DuClare> It's dangerous in general to respect environment variables set by a less privileged user
+22:14 < DuClare> I don't know if it's a big deal in this case.  But I guess the sysadmin could want all the security improving options on any process that starts at root
+22:14 < DuClare> And you don't want to let random users override that option with an environment variable
+22:14 <@mulander> right
+22:15 <@mulander> I expected the restriction to be the other way around - why would a non administrator be able to look into the internals of the memory allocator
+22:17 <@mulander> final path, is grabbing the potentially compiled in malloc_options
+22:17 <@mulander> and finally parsing it
+22:17 <@mulander> there are 2 distinct paths for S and s
+22:18 <@mulander> S - Enable all options suitable for security auditing.
+22:19 <@mulander> lower case version means turning it off
+22:19 <@mulander> first branch when spotting 'S' calls omalloc-parseopt with CGJ
+22:20 <@mulander> so canaries, guard pages and junking
+22:20 <@mulander> second one disables all 3
+22:20 <@mulander> and the final code path handles everything on malloc options that is not s or S
+22:20 <@mulander> it's interesting htat s also sets default cache
+22:22 <@mulander> also, there's one thing that I am noticing right now
+22:22 <@mulander> there's a hierarchy
+22:22 <@mulander> malloc.conf < MALLOC_OPTIONS < malloc_options
+22:22 < DuClare> That's right.
+22:22 <@mulander> so if a program compiles malloc_options then there is no external way to change it's flags
+22:23 < DuClare> Right
+22:23 < DuClare> And some programs utilize that
+22:23 <@mulander> what would be the need of re-setting the malloc-cache in 's'?
+22:23 < DuClare> For a bit of hardening, I guess.
+22:24 <@mulander> I didn't see a requirement on order
+22:24 < DuClare> mulander: Well if you have S, it disables the cache.  But someone wants to override that with s in the environment, what do you do?
+22:24 <@mulander> ah, right - blind and didn't notice the disable on line 614
+22:25 <@mulander> ok off to parseopt
+22:25 <@mulander> http://bxr.su/OpenBSD/lib/libc/stdlib/malloc.c#omalloc_parseopt
+22:25 <@mulander> cache sizes first, handled with bitshifts of malloc_cache
+22:26 <@mulander> then pretty much boolean yes/no flags depending on the character
+22:26 <@mulander> and finally a stderr warning for unkown options
+22:27 <@mulander> no what are the defaults.
+22:27 <@mulander> which was the goal we set on ourselfs
+22:27 < DuClare> See omalloc_init
+22:27 < DuClare> Already been there :)
+22:28 <@mulander> so nothing apart junking and default cache?
+22:28 <@mulander> hmm
+22:28 <@mulander>     while ((mopts.malloc_canary = arc4random()) == 0)
+22:28 <@mulander> and randomly enabled canary
+22:29 < DuClare> That's less of an option
+22:29 <@mulander> yeah it overwrites what you may pass
+22:30 < DuClare> I mean you can't even set it
+22:30 < DuClare> It's just stored there, automatically.
+22:30 < DuClare> It's not controlled by any flag.
+22:30 <@mulander> ah it's different to 'C'
+22:30 <@mulander> which is the Chunk canarry
+22:30 < DuClare> Right
+22:30 <@mulander> so this one would be the page canary?
+22:31 < DuClare> mopts stores other internal use data too
+22:31 <@mulander> well, we got our defaults
+22:32 <@mulander> and already two hours in so let's call this a day
+22:32 < DuClare> The dir_info is protected by these canaries
+22:32 < DuClare> mopts is read-only so an attacker can't mess with the stored canary
+22:33 < DuClare> If they somehow managed to mess with dir_info, they'd have to know the canaries and write them in the right spots
+22:35 <@mulander> thanks
+22:35 <@mulander> ok, let's wrap up, we will continue with malloc tomorrow
+22:35 <@mulander> --- DONE ---
