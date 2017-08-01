@@ -19,3 +19,4 @@ Awesome links and information about memory allocation
 * Visualizing GCs: https://spin.atomicobject.com/2014/09/03/visualizing-garbage-collection-algorithms/
 * Mark and Sweep GC Tutorial: http://journal.stuffwithstuff.com/2013/12/08/babys-first-garbage-collector/
 * OpenBSD code read: malloc - [1](https://junk.tintagel.pl/openbsd-daily-malloc-1.txt) [2](https://junk.tintagel.pl/openbsd-daily-malloc-2.txt) [3](https://junk.tintagel.pl/openbsd-daily-malloc-3.txt) [4](https://junk.tintagel.pl/openbsd-daily-malloc-4.txt) [5](https://junk.tintagel.pl/openbsd-daily-malloc-5.txt) [6](https://junk.tintagel.pl/openbsd-daily-malloc-6.txt) [7](https://junk.tintagel.pl/openbsd-daily-malloc-7.txt) [8](https://junk.tintagel.pl/openbsd-daily-malloc-8.txt)
+* Write a simple memory allocator: http://arjunsreedharan.org/post/148675821737/write-a-simple-memory-allocator
