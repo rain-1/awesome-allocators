@@ -10,6 +10,7 @@ Awesome links and information about memory allocation
 * jemalloc: http://jemalloc.net/
 * nedmalloc: http://www.nedprod.com/programs/portable/nedmalloc/
 * tcmalloc: http://goog-perftools.sourceforge.net/doc/tcmalloc.html
+* download more ram: https://github.com/graphitemaster/moreram
 
 ## Garbage Collectors
 * http://www.hboehm.info/gc/
