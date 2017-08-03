@@ -25,3 +25,4 @@ Awesome links and information about memory allocation
 
 ## Great Papers
 * One pass real-time generational mark-sweep garbage collection, J Armstrong, R Virding (1995) - [link1](https://link.springer.com/chapter/10.1007%2F3-540-60368-9_31) [link2](https://pdfs.semanticscholar.org/6844/271989c22aa1395466b88a65b5775ec9f791.pdf)
+* Worst case fragmentation of first fit and best fit storage allocation strategies, JM Robson (1977) - [link](https://academic.oup.com/comjnl/article-pdf/20/3/242/2255805/200242.pdf)
