@@ -31,4 +31,4 @@ Awesome links and information about memory allocation
 * The Memory Fragmentation Problem: Solved?, Mark S Johnston, Paul R Wilson (1997) - [link](https://www.researchgate.net/profile/Paul_Wilson34/publication/2294861_The_Memory_Fragmentation_Problem_Solved/links/55618b1708ae8c0cab31f4c1/The-Memory-Fragmentation-Problem-Solved.pdf)
 
 ## Good Papers
-* [http://www.cs.cmu.edu/~bryant/pubdir/sigcse18.pdf](Implementing Malloc: Students and Systems Programming) - Brian P. Railing, Randal E. Bryant discuss the CS coursework about implementing malloc.
+* [Implementing Malloc: Students and Systems Programming](http://www.cs.cmu.edu/~bryant/pubdir/sigcse18.pdf) - Brian P. Railing, Randal E. Bryant discuss the CS coursework about implementing malloc.
