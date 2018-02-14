@@ -13,6 +13,7 @@ Awesome links and information about memory allocation
 * ltmalloc: https://github.com/r-lyeh-archived/ltalloc
 * download more ram: https://github.com/graphitemaster/moreram
 * [TLSF](https://github.com/andryblack/TLSF) one malloc to rule them all (blog post) - http://blog.reverberate.org/2009/02/one-malloc-to-rule-them-all.html
+* [wee alloc](http://fitzgeraldnick.com/2018/02/09/wee-alloc.html) a custom allocator for webasm, minimizing binary size.
 
 ## Heaps
 * https://github.com/CCareaga/heap_allocator
