@@ -33,6 +33,7 @@ Awesome links and information about memory allocation
 * Write a simple memory allocator: http://arjunsreedharan.org/post/148675821737/write-a-simple-memory-allocator
 * Pseudomonarchia jemallocum (Investigating the security of jemalloc): http://www.phrack.org/issues/68/10.html
 * slab allocation in cixl language: https://github.com/basic-gongfu/cixl/blob/master/devlog/slab_allocation.md
+* GopherCon 2018: Eben Freeman - Allocator Wrestling: https://www.youtube.com/watch?v=M0HER1G5BRw
 
 ## Great Papers
 * One pass real-time generational mark-sweep garbage collection, J Armstrong, R Virding (1995) - [link1](https://link.springer.com/chapter/10.1007%2F3-540-60368-9_31) [link2](https://pdfs.semanticscholar.org/6844/271989c22aa1395466b88a65b5775ec9f791.pdf)
