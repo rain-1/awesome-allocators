@@ -37,6 +37,7 @@ Awesome links and information about memory allocation
 * GopherCon 2018: Eben Freeman - Allocator Wrestling: https://www.youtube.com/watch?v=M0HER1G5BRw
 * Bitmap allocation in a garbage collector: http://sean.cm/a/tricolor-garbage-collector
 * Binary buddies allocator: http://www.memorymanagement.org/mmref/alloc.html
+* http://dmitrysoshnikov.com/compilers/writing-a-memory-allocator/
 
 ## Great Papers
 * One pass real-time generational mark-sweep garbage collection, J Armstrong, R Virding (1995) - [link1](https://link.springer.com/chapter/10.1007%2F3-540-60368-9_31) [link2](https://pdfs.semanticscholar.org/6844/271989c22aa1395466b88a65b5775ec9f791.pdf)
