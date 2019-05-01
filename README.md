@@ -15,6 +15,7 @@ Awesome links and information about memory allocation
 * [TLSF](https://github.com/andryblack/TLSF) one malloc to rule them all (blog post) - http://blog.reverberate.org/2009/02/one-malloc-to-rule-them-all.html
 * [wee alloc](http://fitzgeraldnick.com/2018/02/09/wee-alloc.html) a custom allocator for webasm, minimizing binary size.
 * [tinyalloc](https://github.com/thi-ng/tinyalloc) for unmanaged, linear memory situations, e.g. WASM and embedded devices
+* [naens/mem_alloc](https://github.com/naens/mem_alloc) A fibonacci buddies alloctor with a good writeup explaining the system.
 
 ## Heaps
 * https://github.com/CCareaga/heap_allocator
